@@ -66,24 +66,3 @@ bbc_df_final.to_csv("Cleaned_Datasets\cleaned_bbc_d3.csv", index=False)
 print("BBC dataset cleaned and saved successfully.")
 print("Final shape:", bbc_df_final.shape)
 print("Label distribution:\n", bbc_df_final["Label"].value_counts())
-
-
-
-
-'''
-for final cleaning 
-# 6. Text preprocessing
-def clean_text(text):
-    text = re.sub(r"http\S+", "", text)
-    text = re.sub(r"[^a-zA-Z\s]", "", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-bbc_df["text"] = bbc_df["text"].apply(clean_text)
-
-
-
-
-
-
-'''
