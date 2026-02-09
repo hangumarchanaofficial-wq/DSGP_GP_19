@@ -109,16 +109,3 @@ print("YouTube US dataset cleaned and saved successfully.")
 print("Final shape:", final_df.shape)
 print("Label distribution:\n", final_df["Label"].value_counts())
 
-
-
-'''
-
-# For all the datasets we can maybe check if the final file is created properly for this case if I am checking 
-
-final_path = "Cleaned_Datasets/cleaned_youtube_d2.csv"
-if os.path.isfile(final_path):
-    print("File created at:", final_path)
-else:
-    print("File creation failed.")  
-
-'''

@@ -137,12 +137,3 @@ print("Label distribution:\n", question_answer_df_final["Label"].value_counts())
 
 
 
-
-'''
- for later cleaning 
-text= BeautifulSoup(text, "html.parser").get_text(separator=" ")  # removing html tags
-    text = re.sub(r"http\S+|www\S+|https\S+","",text) # Removing urls
-    text = re.sub(r"\s+href\s*=\s*\S+", "",text)  # Removing attributes
-    text = re.sub(r"[^\w\s.,;:(){}\[\]+\-=*/<>]", " ", text) # Cleaning noise
-    text =  re.sub(r"\s+", " ", text).strip()  # normalizing spaces
-'''
