@@ -1,21 +1,34 @@
 import pandas as pd
-from pathlib import Path
+from pathlib import Path 
 
-raw_dir = Path("../data/raw")
-num_files = len(list(raw_dir.glob("*.csv")))
-print(num_files)
+RAW_DIR = Path("../data/raw")
+INTERIM_DIR = Path("../data/interim")
 
-for i in range(1, num_files+1):
-    df = pd.read_csv(f"../data/raw/distract_lstm_features -{i}.csv")
-    print(df.head())
-    df["user_id"] = f"user_{i}"
-    df = df.drop(columns=["user"])
+INTERIM_DIR.mkdir(parents=True, exist_ok=True)
+
+csv_files = sorted(RAW_DIR.glob("*.csv"))
+print(f"Found {len(csv_files)} CSV files in {RAW_DIR}")
+
+for index , file_path in enumerate(csv_files):
     try:
+        df = pd.read_csv(file_path)
 
-        df.to_csv(f"../data/interim/distract_lstm_features -{i}.csv", index=False)
+        #Assign a new user ID
+        df["user_id"] = f"user_{index}"
+
+        #drop old columns safely
+
+        if "user" in df.columns:
+            df = df.drop(columns=["user"])
+        output_path = INTERIM_DIR / file_path.name
+
+        df.to_csv(output_path, index=False)
+
+        print(f"Processed : {file_path}")
+
+
+
+
     except Exception as e:
-        print(e)
-        continue
-
-
+        print(f"Error processing {file_path}: {e}")
 
