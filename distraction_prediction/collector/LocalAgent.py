@@ -1,7 +1,6 @@
 import sys
 import subprocess
 
-
 import psutil
 import pandas as pd
 import time
@@ -11,6 +10,9 @@ from datetime import datetime
 from pynput import keyboard, mouse
 import win32gui
 import win32process
+
+# Stage 1: app category scoring
+from app_categorizer import categorize_app
 
 username = getpass.getuser()
 log_path = os.path.expanduser(f"C:/Users/{username}/distract_lstm_features.csv")
@@ -179,6 +181,10 @@ while True:
         avg_press_interval = (pd.Series(press_times).diff().mean() * 1000) if len(press_times) > 1 else 0
         std_press_interval = (pd.Series(press_times).diff().std() * 1000) if len(press_times) > 1 else 0
 
+        # Stage 1: compute app category score for the foreground app this minute
+        current_window_title = get_foreground_window_title()
+        app_category_score = categorize_app(current_app, current_window_title)
+
         row = {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'user': username,
@@ -204,7 +210,8 @@ while True:
             'mouse_scrolls': mouse_scrolls,
             'idle_seconds': idle_seconds,
             'engagement_momentum': key_count + mouse_clicks + mouse_moves,
-            'visible_apps': apps_running
+            'visible_apps': apps_running,
+            'app_category': app_category_score,
         }
 
         save_row(row)
