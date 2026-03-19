@@ -1,0 +1,280 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ────────────────────────────────────────────────
+   THEME CSS VARIABLES
+──────────────────────────────────────────────── */
+:root {
+  --bg-page:      #f5f6fa;
+  --bg-card:      #ffffff;
+  --bg-sidebar:   #ffffff;
+  --border:       #e8eaf0;
+  --text-primary: #111827;
+  --text-muted:   #6b7280;
+  --text-faint:   #9ca3af;
+  --shadow-card:  0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.dark {
+  --bg-page:      #0f1117;
+  --bg-card:      #1a1d27;
+  --bg-sidebar:   #13161f;
+  --border:       #252836;
+  --text-primary: #f1f5f9;
+  --text-muted:   #8b92a9;
+  --text-faint:   #4b5363;
+  --shadow-card:  0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* ────────────────────────────────────────────────
+   BASE
+──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { font-family: 'Inter', system-ui, sans-serif; }
+
+body {
+  margin: 0;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ────────────────────────────────────────────────
+   SCROLLBAR
+──────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+}
+.dark * {
+  scrollbar-color: #374151 transparent;
+}
+*::-webkit-scrollbar { width: 5px; height: 5px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 999px; }
+.dark *::-webkit-scrollbar-thumb { background: #374151; }
+
+/* ────────────────────────────────────────────────
+   COMPONENT UTILITIES
+──────────────────────────────────────────────── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+  transition: background 0.3s, border-color 0.3s, box-shadow 0.2s;
+}
+.card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+.dark .card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.sidebar {
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.page-bg {
+  background: var(--bg-page);
+  transition: background 0.3s;
+}
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #d1d5db;
+  transition: background 0.25s;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  flex-shrink: 0;
+}
+.toggle.on { background: #2563eb; }
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.25s;
+}
+.toggle.on::after { transform: translateX(20px); }
+
+/* Heatmap cells */
+.heatmap-cell {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: #f3f4f6;
+}
+.dark .heatmap-cell { background: #252836; }
+.heatmap-cell.hot-1 { background: #fecaca; }
+.heatmap-cell.hot-2 { background: #f87171; }
+.heatmap-cell.hot-3 { background: #ef4444; }
+.dark .heatmap-cell.hot-1 { background: rgba(248,113,113,0.25); }
+.dark .heatmap-cell.hot-2 { background: rgba(248,113,113,0.55); }
+.dark .heatmap-cell.hot-3 { background: rgba(239,68,68,0.85); }
+
+/* Breadcrumb */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.breadcrumb .sep { color: var(--text-faint); }
+.breadcrumb .current { font-weight: 600; color: var(--text-primary); }
+.breadcrumb .parent { color: var(--text-muted); }
+
+/* Nav item */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: all 0.2s;
+  cursor: pointer;
+  text-decoration: none;
+}
+.nav-item:hover {
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+.nav-item.active {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.dark .nav-item.active {
+  background: rgba(37,99,235,0.12);
+  color: #60a5fa;
+}
+
+/* Progress bars */
+.progress-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  overflow: hidden;
+}
+.dark .progress-bar { background: rgba(255,255,255,0.06); }
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* Stat label */
+.stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Input field */
+.field {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.field:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+}
+.field::placeholder { color: var(--text-faint); }
+
+/* Button variants */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  background: #2563eb;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-primary:hover { background: #1d4ed8; box-shadow: 0 4px 12px rgba(37,99,235,0.35); }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-ghost:hover { background: var(--bg-page); color: var(--text-primary); }
+
+/* Completion Rate dark card match */
+.dark-card {
+  background: #1a2035;
+  border-radius: 16px;
+  padding: 24px;
+  color: white;
+}
+.dark .dark-card {
+  background: #0d1526;
+}
+
+/* Icon badge */
+.icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* Floating pro plan card (sidebar bottom) */
+.pro-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border-radius: 14px;
+  padding: 16px;
+  color: white;
+  margin: 0 12px 16px;
+}
+.dark .pro-card {
+  background: linear-gradient(135deg, #0d1526 0%, #060c18 100%);
+  border: 1px solid rgba(255,255,255,0.06);
+}
