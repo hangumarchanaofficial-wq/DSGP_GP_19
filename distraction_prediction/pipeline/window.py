@@ -1,264 +1,313 @@
-# window.py (LEAKAGE-FIXED)
-# Build LSTM-ready windows from labeled.csv with:
-# - per-user chronological splitting FIRST (train/val/test) on rows
-# - windowing done INSIDE each split only (no overlap leakage)
-# - train-only scaling (z-score) applied to val/test
-# - high-resolution timestamps in metadata (unix seconds)
-# - consistent feature list
+"""
+SDPPS – Windowed Feature Generation (v3.1)
+=============================================
+Reads labeled_activity_log.csv and creates sliding windows for BiLSTM.
+Uses LLM-scored app_category_score + 2 derived features for stronger
+app-context signal.
+
+Features: 24 (was 22)
+  - Original 22 features
+  - app_score_squared:  amplifies difference between high/low scores
+  - is_entertainment:   binary flag (1.0 if app_category_score >= 0.70)
+
+Output:
+  - windowed_features.npz  (X: N x 10 x 24, y: N)
+  - scaler_zscore.json      (mean/std for 24 features)
+  - feature_columns.json    (list of 24 feature names)
+"""
 
 import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
 
-# ---------------------------
-# Config
-# ---------------------------
+# ── Paths ────────────────────────────────────────────────────────────────
+BASE_DIR = Path(r"E:\SDPPS")
+PROCESSED_DIR = BASE_DIR / "distraction_prediction" / "data" / "processed"
+WINDOWS_DIR = PROCESSED_DIR / "windows"
+INTERIM_DIR = BASE_DIR / "distraction_prediction" / "data" / "interim"
+
+INPUT_CSV = WINDOWS_DIR / "labeled_activity_log.csv"
+OUTPUT_NPZ = WINDOWS_DIR / "windowed_features.npz"
+SCALER_JSON = WINDOWS_DIR / "scaler_zscore.json"
+FEATURE_JSON = WINDOWS_DIR / "feature_columns.json"
+LLM_SCORES_JSON = INTERIM_DIR / "app_distraction_scores.json"
+
+# ── Window parameters ────────────────────────────────────────────────────
 WINDOW_SIZE = 10
 STRIDE = 1
+LOOKAHEAD = 5
 
-# Time-based split per user (chronological ROW split)
-TRAIN_RATIO = 0.80
-VAL_RATIO = 0.10
-TEST_RATIO = 0.10
+# ── 24 features (22 original + 2 derived) ────────────────────────────────
+FEATURE_COLUMNS = [
+    "app_switches",
+    "final_app_dwell",
+    "num_visible_apps",
+    "cpu_usage",
+    "memory_usage",
+    "bytes_sent",
+    "bytes_received",
+    "hour",
+    "session_time_minutes",
+    "keystroke_count",
+    "erase_key_count",
+    "erase_key_pct",
+    "avg_press_interval_ms",
+    "std_press_interval_ms",
+    "mouse_clicks",
+    "mouse_moves",
+    "mouse_scrolls",
+    "idle_seconds",
+    "engagement_momentum",
+    "time_diff_seconds",
+    "day_of_week_num",
+    "app_category_score",
+    "app_score_squared",        # NEW: amplifies high/low difference
+    "is_entertainment",         # NEW: binary flag for entertainment apps
+]
 
-ENCODE_DAY_OF_WEEK = True
+LABEL_COLUMN = "distraction_label"
+APP_COL = "foreground_app_end"
 
 
-def zscore_fit(X: np.ndarray, eps: float = 1e-8):
+def day_of_week_to_num(df: pd.DataFrame) -> pd.DataFrame:
+    """Convert day_of_week string to integer if needed."""
+    if "day_of_week_num" not in df.columns:
+        if "day_of_week" in df.columns:
+            day_map = {
+                "monday": 0, "tuesday": 1, "wednesday": 2,
+                "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6
+            }
+            df["day_of_week_num"] = (
+                df["day_of_week"]
+                .str.strip()
+                .str.lower()
+                .map(day_map)
+            )
+            df["day_of_week_num"] = df["day_of_week_num"].fillna(0).astype(int)
+        else:
+            df["day_of_week_num"] = 0
+    return df
+
+
+def ensure_hour_int(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure hour is integer."""
+    if "hour" in df.columns:
+        df["hour"] = df["hour"].astype(int)
+    return df
+
+
+def add_derived_app_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Fit z-score scaler on 3D array: (N, T, F)
-    Returns mean, std arrays of shape (F,)
+    Add derived features from app_category_score to amplify
+    the model's ability to distinguish productive vs entertainment apps.
+
+    app_score_squared:
+      - productive (0.05) -> 0.0025  (very small)
+      - neutral    (0.50) -> 0.2500  (moderate)
+      - social     (0.70) -> 0.4900  (high)
+      - entertain  (0.95) -> 0.9025  (very high)
+      This widens the gap between categories.
+
+    is_entertainment:
+      - 1.0 if app_category_score >= 0.70 (social + entertainment)
+      - 0.0 otherwise
+      Gives the model a clear binary signal.
     """
+    acs = df["app_category_score"]
+    df["app_score_squared"] = (acs ** 2).round(4)
+    df["is_entertainment"] = (acs >= 0.70).astype(float)
+
+    print(f"    Derived features added:")
+    print(f"      app_score_squared:  mean={df['app_score_squared'].mean():.4f}, "
+          f"min={df['app_score_squared'].min():.4f}, "
+          f"max={df['app_score_squared'].max():.4f}")
+    print(f"      is_entertainment:   {df['is_entertainment'].mean() * 100:.1f}% of rows flagged")
+
+    return df
+
+
+def verify_app_category_scores(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Verify that app_category_score was set by label.py using LLM scores.
+    If the column exists but only has a few unique values (hardcoded),
+    try to re-score using LLM JSON.
+    """
+    if "app_category_score" not in df.columns:
+        print("    WARNING: app_category_score not found — adding default 0.5")
+        df["app_category_score"] = 0.5
+        return df
+
+    n_unique = df["app_category_score"].nunique()
+    print(f"    app_category_score: mean={df['app_category_score'].mean():.3f}, "
+          f"unique_values={n_unique}")
+
+    # If LLM scores exist and current scores look hardcoded (few unique values),
+    # re-apply LLM scores for richer feature values
+    if n_unique <= 5 and LLM_SCORES_JSON.exists():
+        print(f"    Detected hardcoded scores ({n_unique} unique). Re-scoring with LLM JSON...")
+
+        with open(LLM_SCORES_JSON, "r") as f:
+            llm_scores = {k.lower().strip(): float(v) for k, v in json.load(f).items()}
+
+        if APP_COL in df.columns:
+            def lookup(app_name):
+                if not isinstance(app_name, str):
+                    return 0.5
+                name = app_name.strip().lower()
+                if name in llm_scores:
+                    return llm_scores[name]
+                name_no_ext = name.replace(".exe", "")
+                for k, v in llm_scores.items():
+                    if k.replace(".exe", "") == name_no_ext:
+                        return v
+                return 0.5
+
+            df["app_category_score"] = df[APP_COL].apply(lookup)
+            new_unique = df["app_category_score"].nunique()
+            print(f"    Re-scored: mean={df['app_category_score'].mean():.3f}, "
+                  f"unique_values={new_unique}")
+
+    return df
+
+
+def build_windows(df: pd.DataFrame):
+    """Build sliding windows per user."""
+    X_list = []
+    y_list = []
+
+    for uid in df["user_id"].unique():
+        user_df = (
+            df[df["user_id"] == uid]
+            .sort_values("timestamp")
+            .reset_index(drop=True)
+        )
+
+        values = user_df[FEATURE_COLUMNS].values.astype(np.float32)
+        labels = user_df[LABEL_COLUMN].values.astype(np.float32)
+
+        n = len(user_df)
+        max_start = n - WINDOW_SIZE - LOOKAHEAD
+
+        for start in range(0, max_start + 1, STRIDE):
+            end = start + WINDOW_SIZE
+
+            Xw = values[start:end]
+            future_labels = labels[end: end + LOOKAHEAD]
+            yw = 1.0 if future_labels.sum() > 0 else 0.0
+
+            X_list.append(Xw)
+            y_list.append(yw)
+
+    X = np.array(X_list, dtype=np.float32)
+    y = np.array(y_list, dtype=np.float32)
+    return X, y
+
+
+def compute_scaler(X: np.ndarray) -> tuple:
+    """Compute per-feature mean and std."""
     flat = X.reshape(-1, X.shape[-1])
-    mean = flat.mean(axis=0)
-    std = flat.std(axis=0)
-    std = np.where(std < eps, 1.0, std)
-    return mean, std
+    means = flat.mean(axis=0)
+    stds = flat.std(axis=0)
+    stds[stds == 0] = 1.0
+    return means, stds
 
 
-def zscore_apply(X: np.ndarray, mean: np.ndarray, std: np.ndarray):
-    return (X - mean) / std
-
-
-def day_name_to_int(series: pd.Series) -> pd.Series:
-    mapping = {
-        "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
-        "Friday": 4, "Saturday": 5, "Sunday": 6
-    }
-    return series.map(mapping).fillna(-1).astype(int)
-
-
-def build_windows(df_part: pd.DataFrame, feature_cols: list, label_col: str, split_name: str):
-    """
-    Build windows inside ONE split (train/val/test) for one user.
-    Returns: X, y, meta (or (None, None, None) if not enough rows)
-    """
-    if len(df_part) < WINDOW_SIZE:
-        return None, None, None
-
-    values = df_part[feature_cols].to_numpy(dtype=np.float32)
-    labels = df_part[label_col].to_numpy(dtype=np.int64)
-    timestamps = df_part["timestamp"].to_numpy()  # datetime64[ns]
-    user_id = df_part["user_id"].iloc[0]
-
-    X_list, y_list, meta_list = [], [], []
-
-    max_start = len(df_part) - WINDOW_SIZE
-    for start in range(0, max_start + 1, STRIDE):
-        end = start + WINDOW_SIZE
-
-        Xw = values[start:end]
-        yw = labels[end - 1]  # label at last step
-        end_ts = pd.Timestamp(timestamps[end - 1]).timestamp()
-
-        X_list.append(Xw)
-        y_list.append(yw)
-        meta_list.append({
-            "user_id": str(user_id),
-            "split": split_name,
-            "window_end_unix": float(end_ts),
-            "start_index_in_split": int(start),
-            "end_index_in_split": int(end - 1),
-        })
-
-    return np.stack(X_list), np.array(y_list), meta_list
-
-
-def split_user_rows(user_df: pd.DataFrame, train_ratio: float, val_ratio: float):
-    """
-    Chronological ROW split for one user's time-sorted dataframe.
-    """
-    n = len(user_df)
-    if n == 0:
-        return None, None, None
-
-    n_train = int(np.floor(n * train_ratio))
-    n_val = int(np.floor(n * val_ratio))
-
-    # Ensure train has enough for at least one window if possible
-    if n_train < WINDOW_SIZE and n >= WINDOW_SIZE:
-        n_train = WINDOW_SIZE
-
-    train_end = min(n_train, n)
-    val_end = min(train_end + n_val, n)
-
-    df_train = user_df.iloc[:train_end].copy()
-    df_val = user_df.iloc[train_end:val_end].copy()
-    df_test = user_df.iloc[val_end:].copy()
-
-    return df_train, df_val, df_test
+def normalize(X: np.ndarray, means: np.ndarray, stds: np.ndarray) -> np.ndarray:
+    """Z-score normalize."""
+    return (X - means) / stds
 
 
 def main():
-    BASE_DIR = Path(__file__).resolve().parent.parent
-    PROCESSED_DIR = BASE_DIR / "data" / "processed"
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+    print("=" * 60)
+    print("  SDPPS — Windowed Feature Generation (v3.1)")
+    print(f"  Window={WINDOW_SIZE}, Stride={STRIDE}, Lookahead={LOOKAHEAD}")
+    print(f"  Features: {len(FEATURE_COLUMNS)} (22 base + 2 derived app features)")
+    print("=" * 60)
 
-    INPUT_FILE = PROCESSED_DIR / "labeled.csv"
+    WINDOWS_DIR.mkdir(parents=True, exist_ok=True)
 
-    OUT_DIR = PROCESSED_DIR / "windows"
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # ── Load labeled data ────────────────────────────────────────────
+    print(f"\n[1] Loading: {INPUT_CSV}")
+    if not INPUT_CSV.exists():
+        print(f"    ERROR: File not found: {INPUT_CSV}")
+        print(f"    Run label.py first.")
+        return
 
-    X_TRAIN_FILE = OUT_DIR / "X_train.npy"
-    Y_TRAIN_FILE = OUT_DIR / "y_train.npy"
-    X_VAL_FILE = OUT_DIR / "X_val.npy"
-    Y_VAL_FILE = OUT_DIR / "y_val.npy"
-    X_TEST_FILE = OUT_DIR / "X_test.npy"
-    Y_TEST_FILE = OUT_DIR / "y_test.npy"
+    df = pd.read_csv(INPUT_CSV)
+    print(f"    Rows: {len(df):,} | Users: {df['user_id'].nunique()}")
 
-    META_TRAIN_FILE = OUT_DIR / "meta_train.json"
-    META_VAL_FILE = OUT_DIR / "meta_val.json"
-    META_TEST_FILE = OUT_DIR / "meta_test.json"
+    # ── Preprocessing ────────────────────────────────────────────────
+    print("\n[2] Preprocessing...")
+    df = day_of_week_to_num(df)
+    df = ensure_hour_int(df)
+    df = verify_app_category_scores(df)
 
-    SCALER_FILE = OUT_DIR / "scaler_zscore.json"
-    FEATURES_FILE = OUT_DIR / "feature_columns.json"
+    # Add derived app features BEFORE checking columns
+    df = add_derived_app_features(df)
 
-    df = pd.read_csv(INPUT_FILE, parse_dates=["timestamp"], low_memory=False)
+    for col in FEATURE_COLUMNS:
+        if col not in df.columns:
+            print(f"    WARNING: Missing column '{col}' — filling with 0")
+            df[col] = 0.0
+        else:
+            df[col] = df[col].fillna(0.0)
 
-    required_cols = {"user_id", "timestamp", "distraction_label"}
-    missing_req = required_cols - set(df.columns)
-    if missing_req:
-        raise ValueError(f"Missing required columns in labeled.csv: {sorted(missing_req)}")
+    if LABEL_COLUMN not in df.columns:
+        print(f"    ERROR: Label column '{LABEL_COLUMN}' not found!")
+        return
 
-    df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    dist_rate = df[LABEL_COLUMN].mean() * 100
+    print(f"    Label distribution: {dist_rate:.1f}% distracted, "
+          f"{100 - dist_rate:.1f}% focused")
 
-    if ENCODE_DAY_OF_WEEK and "day_of_week" in df.columns:
-        df["day_of_week_num"] = day_name_to_int(df["day_of_week"])
+    # ── Build windows ────────────────────────────────────────────────
+    print(f"\n[3] Building windows...")
+    X, y = build_windows(df)
+    print(f"    X shape: {X.shape}")
+    print(f"    y shape: {y.shape}")
+    print(f"    y distraction rate: {y.mean() * 100:.1f}%")
 
-    candidate_features = [
-        "app_switches", "final_app_dwell", "num_visible_apps",
-        "cpu_usage", "memory_usage", "bytes_sent", "bytes_received",
-        "hour", "session_time_minutes", "keystroke_count", "erase_key_count",
-        "erase_key_pct", "avg_press_interval_ms", "std_press_interval_ms",
-        "mouse_clicks", "mouse_moves", "mouse_scrolls", "idle_seconds",
-        "engagement_momentum", "time_diff_seconds",
-        "day_of_week_num",
-    ]
-    feature_cols = [c for c in candidate_features if c in df.columns]
-    if not feature_cols:
-        raise ValueError("No feature columns found. Check your cleaned/labelled dataset columns.")
+    # ── Compute scaler ───────────────────────────────────────────────
+    print(f"\n[4] Computing Z-score scaler...")
+    means, stds = compute_scaler(X)
+    X_normed = normalize(X, means, stds)
 
-    # numeric safety
-    for c in feature_cols:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    print(f"    {'Feature':<28} {'Mean':>10} {'Std':>10}")
+    print(f"    {'-' * 48}")
+    for i, col in enumerate(FEATURE_COLUMNS):
+        print(f"    {col:<28} {means[i]:>10.4f} {stds[i]:>10.4f}")
 
-    label_col = "distraction_label"
-    df[label_col] = pd.to_numeric(df[label_col], errors="coerce").fillna(0).astype(int)
-
-    print("Total rows:", len(df))
-    print("Users:", df["user_id"].nunique())
-    print("Using features:", feature_cols)
-    print("Window size:", WINDOW_SIZE, "Stride:", STRIDE)
-    print("Row split ratios:", TRAIN_RATIO, VAL_RATIO, TEST_RATIO)
-
-    X_train_all, y_train_all, meta_train_all = [], [], []
-    X_val_all, y_val_all, meta_val_all = [], [], []
-    X_test_all, y_test_all, meta_test_all = [], [], []
-
-    for user_id, user_df in df.groupby("user_id", sort=False):
-        user_df = user_df.sort_values("timestamp")
-
-        df_tr, df_va, df_te = split_user_rows(user_df, TRAIN_RATIO, VAL_RATIO)
-        if df_tr is None:
-            continue
-
-        Xtr, ytr, mtr = build_windows(df_tr, feature_cols, label_col, "train")
-        Xva, yva, mva = build_windows(df_va, feature_cols, label_col, "val") if len(df_va) else (None, None, None)
-        Xte, yte, mte = build_windows(df_te, feature_cols, label_col, "test") if len(df_te) else (None, None, None)
-
-        if Xtr is not None and len(ytr) > 0:
-            X_train_all.append(Xtr)
-            y_train_all.append(ytr)
-            meta_train_all.extend(mtr)
-
-        if Xva is not None and len(yva) > 0:
-            X_val_all.append(Xva)
-            y_val_all.append(yva)
-            meta_val_all.extend(mva)
-
-        if Xte is not None and len(yte) > 0:
-            X_test_all.append(Xte)
-            y_test_all.append(yte)
-            meta_test_all.extend(mte)
-
-    if not X_train_all:
-        raise ValueError("No training windows were created. Increase data or reduce WINDOW_SIZE.")
-
-    X_train = np.concatenate(X_train_all, axis=0)
-    y_train = np.concatenate(y_train_all, axis=0)
-
-    X_val = np.concatenate(X_val_all, axis=0) if X_val_all else np.empty((0, WINDOW_SIZE, len(feature_cols)), dtype=np.float32)
-    y_val = np.concatenate(y_val_all, axis=0) if y_val_all else np.empty((0,), dtype=np.int64)
-
-    X_test = np.concatenate(X_test_all, axis=0) if X_test_all else np.empty((0, WINDOW_SIZE, len(feature_cols)), dtype=np.float32)
-    y_test = np.concatenate(y_test_all, axis=0) if y_test_all else np.empty((0,), dtype=np.int64)
-
-    print("\nWindows created (LEAKAGE-SAFE):")
-    print("Train:", X_train.shape, y_train.shape)
-    print("Val  :", X_val.shape, y_val.shape)
-    print("Test :", X_test.shape, y_test.shape)
-
-    # Train-only scaling
-    mean, std = zscore_fit(X_train)
-    X_train = zscore_apply(X_train, mean, std)
-    if len(X_val) > 0:
-        X_val = zscore_apply(X_val, mean, std)
-    if len(X_test) > 0:
-        X_test = zscore_apply(X_test, mean, std)
-
-    # Save arrays
-    np.save(X_TRAIN_FILE, X_train)
-    np.save(Y_TRAIN_FILE, y_train)
-    np.save(X_VAL_FILE, X_val)
-    np.save(Y_VAL_FILE, y_val)
-    np.save(X_TEST_FILE, X_test)
-    np.save(Y_TEST_FILE, y_test)
-
-    # Save metadata + scaler + features
-    with open(META_TRAIN_FILE, "w") as f:
-        json.dump(meta_train_all, f, indent=2)
-    with open(META_VAL_FILE, "w") as f:
-        json.dump(meta_val_all, f, indent=2)
-    with open(META_TEST_FILE, "w") as f:
-        json.dump(meta_test_all, f, indent=2)
-
-    scaler_payload = {
-        "type": "zscore",
-        "mean": [float(m) for m in mean],
-        "std": [float(s) for s in std],
+    # ── Save ─────────────────────────────────────────────────────────
+    scaler = {
+        "mean": means.tolist(),
+        "std": stds.tolist(),
+        "feature_columns": FEATURE_COLUMNS,
         "window_size": WINDOW_SIZE,
-        "stride": STRIDE
     }
-    with open(SCALER_FILE, "w") as f:
-        json.dump(scaler_payload, f, indent=2)
+    with open(SCALER_JSON, "w") as f:
+        json.dump(scaler, f, indent=2)
+    print(f"\n[5] Saved scaler: {SCALER_JSON}")
 
-    with open(FEATURES_FILE, "w") as f:
-        json.dump({"feature_columns": feature_cols}, f, indent=2)
+    with open(FEATURE_JSON, "w") as f:
+        json.dump(FEATURE_COLUMNS, f, indent=2)
+    print(f"    Saved features: {FEATURE_JSON}")
 
-    print("\nSaved leakage-safe windows to:", OUT_DIR)
+    np.savez(OUTPUT_NPZ, X=X_normed, y=y, X_raw=X)
+    print(f"    Saved windows: {OUTPUT_NPZ}")
+
+    # ── Summary ──────────────────────────────────────────────────────
+    n = len(y)
+    print(f"\n[6] Dataset ready for training:")
+    print(f"    Total windows: {n:,}")
+    print(f"    Distracted:    {int(y.sum()):,} ({y.mean() * 100:.1f}%)")
+    print(f"    Focused:       {int(n - y.sum()):,} ({(1 - y.mean()) * 100:.1f}%)")
+    print(f"    Feature dim:   {X.shape[-1]}")
+
+    print("\n" + "=" * 60)
+    print("  Next: python -m distraction_prediction.models.train")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
-    
