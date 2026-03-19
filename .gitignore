@@ -1,2 +1,12 @@
 # IDE files
 .idea/
+
+node_modules/
+frontend/node_modules/
+.venv/
+__pycache__/
+*.pyc
+distraction_prediction/data/processed/
+distraction_prediction/models/saved_models/*.pt
+.DS_Store
+.idea/
