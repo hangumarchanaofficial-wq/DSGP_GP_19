@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, GraduationCap, User, ArrowRight, Check, Sparkles } from 'lucide-react';
+import Footer from '../components/Footer';
 
 export default function Register() {
   const [showPw, setShowPw] = useState(false);
@@ -25,7 +26,8 @@ export default function Register() {
   const inputCls = `w-full pl-11 pr-4 py-3 rounded-xl border-2 border-gray-200 bg-white text-gray-900 placeholder-gray-400 text-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all`;
 
   return (
-    <div className="min-h-screen flex font-sans">
+    <div className="min-h-screen flex flex-col font-sans">
+      <div className="flex flex-1">
 
       {/* ── Left Branding Panel ─────────────────────────── */}
       <div className="hidden lg:flex lg:w-[42%] relative overflow-hidden bg-gradient-to-br from-indigo-500 via-blue-600 to-blue-900">
@@ -221,6 +223,8 @@ export default function Register() {
           </p>
         </div>
       </div>
+      </div>
+      <Footer />
     </div>
   );
 }
