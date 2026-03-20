@@ -1,5 +1,5 @@
-"""
-SDPPS – Desktop Agent (v3.2)
+﻿"""
+SDPPS - Desktop Agent (v3.2)
 ==============================
 Supports pure, light-blend, and adaptive-blend modes.
 Shows recency vs full-window prediction breakdown + app streak count.
@@ -47,6 +47,7 @@ class DesktopAgent:
         self.latest_prediction = None
         self.snapshot_count = 0
         self.blocking_active = False
+        self._prediction_history = []
 
     def start_api(self):
         app = create_app(self)
@@ -68,7 +69,7 @@ class DesktopAgent:
                 self.snapshot_count += 1
                 self.latest_snapshot = snapshot
 
-                # ── Print snapshot info ───────────────────────────────
+                # -- Print snapshot info --
                 ts = time.strftime("%H:%M:%S")
                 app_name = snapshot.get("current_app", "?")
                 title = snapshot.get("current_title", "")
@@ -92,7 +93,7 @@ class DesktopAgent:
                       f"Engage={snapshot.get('engagement_momentum', 0)}, "
                       f"AppCatScore={snapshot.get('app_category_score', 0.5):.2f}")
 
-                # ── Prediction ────────────────────────────────────────
+                # -- Prediction --
                 result = self.predictor.predict(snapshot)
 
                 if result.get("status") == "filling":
@@ -101,19 +102,45 @@ class DesktopAgent:
                     print(f"  Filling window... {count}/{self.predictor.window_size} "
                           f"(need {needed} more)")
                 else:
+                    # Extract values FIRST
+                    bilstm = result["bilstm_prob"]
+                    full_w  = result["bilstm_full"]
+                    recent  = result["bilstm_recency"]
+                    appcat  = result["app_cat_score"]
+                    final   = result["final_prob"]
+                    label   = result["label"]
+                    conf    = result["confidence"]
+                    mode    = result["blend_mode"]
+                    dom     = result["dominant_app"]
+                    streak  = result.get("streak_count", 0)
+
+                    # Store prediction
                     self.latest_prediction = result
 
-                    bilstm = result["bilstm_prob"]
-                    full_w = result["bilstm_full"]
-                    recent = result["bilstm_recency"]
-                    appcat = result["app_cat_score"]
-                    final  = result["final_prob"]
-                    label  = result["label"]
-                    conf   = result["confidence"]
-                    mode   = result["blend_mode"]
-                    dom    = result["dominant_app"]
-                    streak = result.get("streak_count", 0)
+                    # Append to history
+                    self._prediction_history.append({
+                        'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'label': label,
+                        'final_prob': final,
+                        'bilstm_prob': bilstm,
+                        'app_cat_score': appcat,
+                        'confidence': conf,
+                        'dominant_app': dom,
+                        'streak_count': streak,
+                        'blend_mode': mode,
+                        'raw_features': {
+                            'cpu_usage': snapshot.get('cpu_usage', 0),
+                            'memory_usage': snapshot.get('memory_usage', 0),
+                            'keystroke_count': snapshot.get('keystroke_count', 0),
+                            'mouse_clicks': snapshot.get('mouse_clicks', 0),
+                            'mouse_moves': snapshot.get('mouse_moves', 0),
+                            'mouse_scrolls': snapshot.get('mouse_scrolls', 0),
+                            'idle_seconds': snapshot.get('idle_seconds', 0),
+                            'app_switches': snapshot.get('app_switches', 0),
+                        },
+                    })
 
+                    # Print prediction
                     print(f"  >> BiLSTM={bilstm:.4f} (full={full_w:.4f}, "
                           f"recent={recent:.4f}) | "
                           f"AppCat={appcat:.4f} ({result['app_cat_label']}) | "
@@ -121,15 +148,15 @@ class DesktopAgent:
                     print(f"  >> Prediction: {label} (confidence {conf * 100:.1f}%) "
                           f"| DomApp: {dom}")
 
-                    # ── Auto-block logic ──────────────────────────────
+                    # -- Auto-block logic --
                     if final >= 0.70:
                         if not self.blocking_active:
-                            print(f"  >> HIGH DISTRACTION ({final:.2f}) — enabling blocker")
+                            print(f"  >> HIGH DISTRACTION ({final:.2f}) - enabling blocker")
                             self.blocker.enable()
                             self.blocking_active = True
                     elif final <= 0.35:
                         if self.blocking_active:
-                            print(f"  >> LOW DISTRACTION ({final:.2f}) — disabling blocker")
+                            print(f"  >> LOW DISTRACTION ({final:.2f}) - disabling blocker")
                             self.blocker.disable()
                             self.blocking_active = False
 

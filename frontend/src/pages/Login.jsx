@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, GraduationCap, ArrowRight, Sparkles, Shield, BarChart2 } from 'lucide-react';
+import Footer from '../components/Footer';
 
 export default function Login() {
   const [showPw, setShowPw] = useState(false);
@@ -15,7 +16,8 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex font-sans">
+    <div className="min-h-screen flex flex-col font-sans">
+      <div className="flex flex-1">
 
       {/* ── Left Branding Panel ─────────────────────── */}
       <div className="hidden lg:flex lg:w-[48%] relative overflow-hidden bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-800">
@@ -179,6 +181,8 @@ export default function Login() {
           </p>
         </div>
       </div>
+      </div>
+      <Footer />
     </div>
   );
 }
