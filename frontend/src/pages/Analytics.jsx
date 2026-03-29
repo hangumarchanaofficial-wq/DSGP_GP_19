@@ -141,7 +141,7 @@ export default function Analytics() {
               </div>
 
               {/* ── Full Timeline ──────────────── */}
-              <div className="glass-card p-6">
+              <div className="glass-card p-6 min-w-0">
                 <h3 className="text-sm font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Score Timeline</h3>
                 <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Final score, BiLSTM raw, and App Category across all snapshots</p>
                 <div style={{ height: 250 }}>
@@ -168,7 +168,7 @@ export default function Analytics() {
               <div className="grid grid-cols-12 gap-5">
 
                 {/* Hourly Distribution */}
-                <div className="col-span-12 lg:col-span-5 glass-card p-6">
+                <div className="col-span-12 lg:col-span-5 glass-card p-6 min-w-0">
                   <h3 className="text-sm font-bold mb-4" style={{ color: 'var(--text-primary)' }}>Hourly Breakdown</h3>
                   <div style={{ height: 200 }}>
                     <ResponsiveContainer width="100%" height="100%">
