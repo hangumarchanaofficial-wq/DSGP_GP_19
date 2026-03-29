@@ -3,7 +3,7 @@ import Sidebar from '../components/Sidebar';
 import Footer from '../components/Footer';
 import { useTheme } from '../context/ThemeContext';
 import { useAgent } from '../hooks/useAgent';
-import { User, Shield, Sliders, Moon } from 'lucide-react';
+import { User, Shield, Sliders } from 'lucide-react';
 
 function Section({ icon: Icon, title, children }) {
   return (
@@ -39,7 +39,7 @@ function Row({ label, desc, right }) {
 }
 
 export default function Settings() {
-  const { dark, toggle } = useTheme();
+  const { dark } = useTheme();
   const { connected, blocker, toggleBlocking } = useAgent(5000);
   const [alerts, setAlerts] = useState(true);
   const [autoBlock, setAutoBlock] = useState(true);
@@ -52,14 +52,15 @@ export default function Settings() {
       <main className="flex-1 flex flex-col min-h-screen overflow-y-auto">
         <header className="sticky top-0 z-30 flex items-center px-8 py-4"
           style={{
-            background: dark ? 'rgba(12,14,20,0.85)' : 'rgba(248,249,252,0.85)',
+            background: 'rgba(12,14,20,0.85)',
             backdropFilter: 'blur(16px)',
             borderBottom: '1px solid var(--border)',
           }}>
           <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
         </header>
 
-        <div className="p-6 space-y-5 max-w-3xl">
+        {/* REMOVED max-w-3xl — now full width with comfortable padding */}
+        <div className="flex-1 p-6 lg:p-8 space-y-5">
           <Section icon={User} title="Profile">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -109,9 +110,7 @@ export default function Settings() {
               right={<Toggle value={alerts} onChange={setAlerts} />} />
           </Section>
 
-          <Section icon={Moon} title="Appearance">
-            <Row label="Dark mode" right={<Toggle value={dark} onChange={toggle} />} />
-          </Section>
+          {/* Appearance section removed — dark mode only */}
         </div>
         <Footer />
       </main>
