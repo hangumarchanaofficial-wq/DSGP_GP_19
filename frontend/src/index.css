@@ -229,3 +229,79 @@ body {
   background: var(--danger);
   box-shadow: 0 0 8px rgba(239,68,68,0.5);
 }
+/* ── Planner-specific cards ─────────────────────── */
+.planner-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.planner-subtle {
+  background: var(--bg-elevated);
+}
+
+.planner-stat {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.planner-hero {
+  background: linear-gradient(135deg,
+    rgba(99, 102, 241, 0.08),
+    rgba(16, 185, 129, 0.04));
+  border: 1px solid var(--border);
+}
+
+.planner-action {
+  background: linear-gradient(135deg,
+    rgba(99, 102, 241, 0.92),
+    rgba(79, 70, 229, 0.85)) !important;
+  border: 1px solid rgba(129, 140, 248, 0.3) !important;
+}
+
+.planner-input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* ── Custom slider for planner ────────────────── */
+.slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--slider-color, var(--accent));
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.slider-input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--slider-color, var(--accent));
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Sidebar fixed width ─────────────────────── */
+.sidebar {
+  width: 220px;
+  min-height: 100vh;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
