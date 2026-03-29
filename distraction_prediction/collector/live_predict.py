@@ -28,10 +28,11 @@ WINDOW_SIZE = 10
 THRESHOLD = 0.5
 
 # Import model and app categorizer
-sys.path.insert(0, str(MODELS_DIR))
-from train import DistractionLSTM
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from app_categorizer import window_category_score, categorize_window
+from distraction_prediction.models.lstm_model import DistractionLSTM
+from distraction_prediction.collector.app_categorizer import (
+    window_category_score,
+    categorize_window,
+)
 
 DAY_MAP = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
            "Friday": 4, "Saturday": 5, "Sunday": 6}
@@ -44,6 +45,8 @@ def load_model(device):
         input_size=cfg["input_size"], hidden_size=cfg["hidden_size"],
         num_layers=cfg["num_layers"], dropout=cfg["dropout"],
         bidirectional=cfg["bidirectional"],
+        attention_activation=cfg.get("attention_activation", "tanh"),
+        head_name=cfg.get("head_name", "out"),
     )
     model.load_state_dict(ckpt["model_state_dict"])
     model.to(device)

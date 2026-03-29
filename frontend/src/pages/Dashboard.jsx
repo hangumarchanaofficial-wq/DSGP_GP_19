@@ -1,13 +1,14 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Sidebar from '../components/Sidebar';
 import Footer from '../components/Footer';
 import { useAgent } from '../hooks/useAgent';
 import { useTheme } from '../context/ThemeContext';
+import { agentAPI } from '../services/api';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { Activity, Shield, Database, Cpu, Eye, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Shield, Database, Cpu, Eye, Wifi, WifiOff, BookOpen, Search } from 'lucide-react';
 
 /* ── Focus Gauge ─────────────────────────────────── */
 function FocusGauge({ score, isDistracted, confidence }) {
@@ -105,9 +106,13 @@ function ChartTooltip({ active, payload, label }) {
 export default function Dashboard() {
   const { dark } = useTheme();
   const {
-    status, connected, prediction, blocker,
+    status, connected, prediction, blocker, contentClassifier,
     snapshots, history, toggleBlocking,
   } = useAgent(4000);
+  const [contentForm, setContentForm] = useState({ title: '', url: '', content: '' });
+  const [contentResult, setContentResult] = useState(null);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentError, setContentError] = useState('');
 
   const focusScore = prediction ? Math.round((1 - prediction.probability) * 100) : 0;
   const isDistracted = prediction?.is_distracted ?? false;
@@ -148,6 +153,20 @@ export default function Dashboard() {
   // Latest raw features
   const lastEntry = history?.length > 0 ? history[history.length - 1] : null;
   const rawFeatures = lastEntry?.raw_features ?? {};
+
+  const runContentCheck = async () => {
+    setContentLoading(true);
+    setContentError('');
+    try {
+      const result = await agentAPI.checkContent(contentForm);
+      setContentResult(result);
+    } catch (err) {
+      setContentError(err.message);
+      setContentResult(null);
+    } finally {
+      setContentLoading(false);
+    }
+  };
 
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -237,7 +256,7 @@ export default function Dashboard() {
             </div>
 
             {/* Stat Cards */}
-            <div className="col-span-12 lg:col-span-8 grid grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="col-span-12 lg:col-span-8 grid grid-cols-2 xl:grid-cols-5 gap-4">
               <StatCard icon={Activity} label="Confidence"
                 value={prediction ? `${Math.round(confidence * 100)}%` : '—'}
                 sub={prediction ? label : 'No data'}
@@ -254,6 +273,11 @@ export default function Dashboard() {
                 value={rawFeatures.cpu_usage ? `${rawFeatures.cpu_usage}%` : '—'}
                 sub={rawFeatures.memory_usage ? `RAM ${rawFeatures.memory_usage}%` : ''}
                 iconBg="var(--danger-bg)" iconColor="var(--danger)" />
+              <StatCard icon={BookOpen} label="Content"
+                value={contentClassifier?.ready ? 'READY' : 'OFFLINE'}
+                sub={contentClassifier?.ready ? 'Classifier linked' : (contentClassifier?.error || 'Model unavailable')}
+                iconBg={contentClassifier?.ready ? 'var(--success-bg)' : 'var(--bg-elevated)'}
+                iconColor={contentClassifier?.ready ? 'var(--success)' : 'var(--text-muted)'} />
             </div>
           </div>
 
@@ -428,6 +452,122 @@ export default function Dashboard() {
           </div>
 
           {/* ── Row 4: Recent Activity ────────── */}
+          <div className="glass-card p-6">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Content Classification</h3>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Test the `content_classification` module through the main SDPPS API
+                </p>
+              </div>
+              <div className="px-3 py-1 rounded-full text-[10px] font-semibold"
+                style={{
+                  background: contentClassifier?.ready ? 'var(--success-bg)' : 'var(--warning-bg)',
+                  color: contentClassifier?.ready ? 'var(--success)' : 'var(--warning)',
+                }}>
+                {contentClassifier?.ready ? 'Model Ready' : 'Model Unavailable'}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-12 gap-4">
+              <div className="col-span-12 lg:col-span-7 space-y-3">
+                <input
+                  value={contentForm.title}
+                  onChange={(e) => setContentForm((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="Page title"
+                  className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none transition-all"
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                />
+                <input
+                  value={contentForm.url}
+                  onChange={(e) => setContentForm((prev) => ({ ...prev, url: e.target.value }))}
+                  placeholder="URL"
+                  className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none transition-all"
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                />
+                <textarea
+                  value={contentForm.content}
+                  onChange={(e) => setContentForm((prev) => ({ ...prev, content: e.target.value }))}
+                  placeholder="Paste page content or transcript"
+                  rows={7}
+                  className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none transition-all resize-y"
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
+                />
+                <button
+                  onClick={runContentCheck}
+                  disabled={!contentClassifier?.ready || contentLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                  style={{
+                    background: 'var(--accent-bg)',
+                    color: 'var(--accent)',
+                    border: '1px solid var(--accent)',
+                  }}>
+                  <Search className="w-3.5 h-3.5" />
+                  {contentLoading ? 'Classifying...' : 'Classify Content'}
+                </button>
+              </div>
+
+              <div className="col-span-12 lg:col-span-5">
+                <div className="h-full rounded-2xl p-5" style={{ background: 'var(--bg-elevated)' }}>
+                  <h4 className="text-xs font-bold uppercase tracking-wide mb-4" style={{ color: 'var(--text-muted)' }}>
+                    Result
+                  </h4>
+
+                  {contentError && (
+                    <div className="px-4 py-3 rounded-xl text-xs font-medium"
+                      style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
+                      {contentError}
+                    </div>
+                  )}
+
+                  {!contentError && !contentResult && (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      Submit a title, URL, and enough page text to test the classifier.
+                    </p>
+                  )}
+
+                  {contentResult && (
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Decision</span>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold"
+                          style={{
+                            background: contentResult.result === 'allow' ? 'var(--success-bg)' : contentResult.result === 'block' ? 'var(--danger-bg)' : 'var(--warning-bg)',
+                            color: contentResult.result === 'allow' ? 'var(--success)' : contentResult.result === 'block' ? 'var(--danger)' : 'var(--warning)',
+                          }}>
+                          {(contentResult.result || 'unknown').toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Label</span>
+                        <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                          {contentResult.label || 'pending'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Word Count</span>
+                        <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                          {contentResult.word_count ?? 0}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Keyword Hits</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(contentResult.keyword_hits?.length ? contentResult.keyword_hits : ['none']).map((hit) => (
+                            <span key={hit} className="px-2 py-1 rounded-full text-[10px] font-semibold"
+                              style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>
+                              {hit}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="glass-card p-6">
             <h3 className="text-sm font-bold mb-4" style={{ color: 'var(--text-primary)' }}>Recent Activity</h3>
             <div className="overflow-x-auto">

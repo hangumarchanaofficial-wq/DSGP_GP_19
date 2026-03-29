@@ -305,7 +305,7 @@ def main():
     print(f"    Feature dim:   {X.shape[-1]}")
 
     print("\n" + "=" * 60)
-    print("  Next: python -m distraction_prediction.models.train")
+    print("  Next: run distraction_prediction/models/notebooks/train_bilstm.ipynb")
     print("=" * 60)
 
 

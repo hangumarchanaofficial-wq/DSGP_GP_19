@@ -1,0 +1,23 @@
+{
+  "accuracy": 0.914,
+  "f1": 0.9237,
+  "auc": 0.9779,
+  "confusion_matrix": [
+    [
+      2530,
+      207
+    ],
+    [
+      345,
+      3340
+    ]
+  ],
+  "classification_report": "              precision    recall  f1-score   support\n\n     Focused       0.88      0.92      0.90      2737\n  Distracted       0.94      0.91      0.92      3685\n\n    accuracy                           0.91      6422\n   macro avg       0.91      0.92      0.91      6422\nweighted avg       0.92      0.91      0.91      6422\n",
+  "best_config": {
+    "n_estimators": 500,
+    "max_depth": "None",
+    "min_samples_split": 2,
+    "min_samples_leaf": 1,
+    "max_features": "sqrt"
+  }
+}

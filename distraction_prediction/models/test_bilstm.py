@@ -8,7 +8,7 @@ Usage:
     python E:\SDPPS\distraction_prediction\models\test_bilstm.py
 """
 
-import os, sys, json, numpy as np, torch, torch.nn as nn
+import os, json, numpy as np, torch, torch.nn as nn
 
 # ── Paths ────────────────────────────────────────────────────────────────
 BASE    = r"E:\SDPPS\distraction_prediction"
