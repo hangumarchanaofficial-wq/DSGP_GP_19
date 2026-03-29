@@ -1,0 +1,36 @@
+[
+  {
+    "id": "task_1",
+    "subject": "Math",
+    "duration_minutes": 60,
+    "priority": "medium",
+    "scheduled_slot": null,
+    "status": "completed",
+    "created_at": "2026-03-20 20:59:31",
+    "started_at": "2026-03-20 20:59:31",
+    "completed_at": "2026-03-20 20:59:31",
+    "rescheduled_from": null,
+    "rescheduled_to": null,
+    "reschedule_reason": null,
+    "distraction_events": 0,
+    "focus_score_avg": null,
+    "notes": ""
+  },
+  {
+    "id": "task_2",
+    "subject": "Physics",
+    "duration_minutes": 45,
+    "priority": "medium",
+    "scheduled_slot": null,
+    "status": "missed",
+    "created_at": "2026-03-20 20:59:31",
+    "started_at": null,
+    "completed_at": null,
+    "rescheduled_from": null,
+    "rescheduled_to": null,
+    "reschedule_reason": "distraction",
+    "distraction_events": 0,
+    "focus_score_avg": null,
+    "notes": ""
+  }
+]
