@@ -1,9 +1,7 @@
-
 import { NavLink, useLocation } from 'react-router-dom';
-import { useTheme } from '../context/ThemeContext';
 import {
   LayoutDashboard, BarChart3, CalendarCheck, Settings,
-  Moon, Sun, LogOut, GraduationCap,
+  LogOut, GraduationCap,
 } from 'lucide-react';
 
 const navItems = [
@@ -14,11 +12,18 @@ const navItems = [
 ];
 
 export default function Sidebar({ active }) {
-  const { dark, toggle } = useTheme();
   const location = useLocation();
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" style={{
+      width: 220,
+      minHeight: '100vh',
+      background: 'var(--bg-sidebar)',
+      borderRight: '1px solid var(--border)',
+      display: 'flex',
+      flexDirection: 'column',
+      flexShrink: 0,
+    }}>
       {/* Logo */}
       <div className="px-5 py-6 flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center"
@@ -48,14 +53,8 @@ export default function Sidebar({ active }) {
         })}
       </nav>
 
-      {/* Bottom */}
+      {/* Bottom — just logout */}
       <div className="px-3 pb-5 space-y-2">
-        <button onClick={toggle}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all"
-          style={{ color: 'var(--text-secondary)' }}>
-          {dark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
-          {dark ? 'Light Mode' : 'Dark Mode'}
-        </button>
         <NavLink to="/login"
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all"
           style={{ color: 'var(--text-muted)' }}>
