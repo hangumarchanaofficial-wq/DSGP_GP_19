@@ -258,7 +258,7 @@ export default function Dashboard() {
           </div>
 
           {/* ── Row 2: Timeline ───────────────── */}
-          <div className="glass-card p-6">
+          <div className="glass-card p-6 min-w-0">
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Prediction Timeline</h3>
@@ -304,7 +304,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-12 gap-5">
 
             {/* App Distribution */}
-            <div className="col-span-12 lg:col-span-4 glass-card p-6">
+            <div className="col-span-12 lg:col-span-4 glass-card p-6 min-w-0">
               <h3 className="text-sm font-bold mb-4" style={{ color: 'var(--text-primary)' }}>App Distribution</h3>
               {appDistribution.length > 0 ? (
                 <>
