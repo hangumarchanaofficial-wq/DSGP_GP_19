@@ -19,20 +19,8 @@ def predict_search(text):
     for word in noise_words:
         text = text.replace(word, "")
 
-    # 🔥 ADD BOOST WORDS (VERY IMPORTANT)
-    education_keywords = [
-        "learn", "tutorial", "course", "math", "science",
-        "education", "lecture", "study", "algorithm", "programming"
-    ]
-
-    score = sum([1 for word in education_keywords if word in text])
-
     text_vectorized = vectorizer.transform([text])
     prediction = model.predict(text_vectorized)[0]
-
-    # 🔥 OVERRIDE LOGIC
-    if score >= 2:
-        return 1   # FORCE ALLOW
 
     return prediction
 # =========================
