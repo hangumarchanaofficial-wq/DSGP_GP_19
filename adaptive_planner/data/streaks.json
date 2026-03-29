@@ -1,0 +1,57 @@
+{
+  "focus_streak": 0,
+  "best_streak": 22,
+  "total_focused_sessions": 53,
+  "total_sessions": 76,
+  "badges": [
+    {
+      "id": "first_focus",
+      "name": "First Focus",
+      "description": "Completed your first focused session",
+      "icon": "star",
+      "earned_at": "2026-03-20 20:59:26"
+    },
+    {
+      "id": "streak_3",
+      "name": "Hat Trick",
+      "description": "3 focused sessions in a row",
+      "icon": "flame",
+      "earned_at": "2026-03-20 20:59:27"
+    },
+    {
+      "id": "total_10",
+      "name": "Dedicated Learner",
+      "description": "10 total focused sessions",
+      "icon": "book",
+      "earned_at": "2026-03-20 20:59:27"
+    },
+    {
+      "id": "streak_5",
+      "name": "Focus Master",
+      "description": "5 focused sessions in a row",
+      "icon": "trophy",
+      "earned_at": "2026-03-20 20:59:27"
+    },
+    {
+      "id": "streak_10",
+      "name": "Unstoppable",
+      "description": "10 focused sessions in a row",
+      "icon": "crown",
+      "earned_at": "2026-03-20 20:59:27"
+    },
+    {
+      "id": "total_25",
+      "name": "Study Champion",
+      "description": "25 total focused sessions",
+      "icon": "medal",
+      "earned_at": "2026-03-20 20:59:28"
+    },
+    {
+      "id": "total_50",
+      "name": "Academic Hero",
+      "description": "50 total focused sessions",
+      "icon": "shield",
+      "earned_at": "2026-03-21 16:06:55"
+    }
+  ]
+}
