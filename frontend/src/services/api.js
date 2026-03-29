@@ -33,4 +33,20 @@ export const agentAPI = {
     const res = await fetch(`${API_BASE}/unblock`, { method: 'POST' });
     return res.json();
   },
+
+  async getContentHealth() {
+    const res = await fetch(`${API_BASE}/content/health`);
+    return res.json();
+  },
+
+  async checkContent(payload) {
+    const res = await fetch(`${API_BASE}/content/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Content classification failed');
+    return data;
+  },
 };

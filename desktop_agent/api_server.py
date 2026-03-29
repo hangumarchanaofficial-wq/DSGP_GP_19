@@ -8,6 +8,7 @@ except ImportError:
     BLOCKED_SITES = []
 
 _planner = None
+_content_classifier = None
 
 def get_planner():
     global _planner
@@ -15,6 +16,14 @@ def get_planner():
         from adaptive_planner.planner_service import AdaptivePlanner
         _planner = AdaptivePlanner()
     return _planner
+
+
+def get_content_classifier():
+    global _content_classifier
+    if _content_classifier is None:
+        from content_classification.service import ContentClassifier
+        _content_classifier = ContentClassifier()
+    return _content_classifier
 
 
 def _get_distraction_state(agent):
@@ -86,6 +95,15 @@ def create_app(agent):
             'blocked_sites': BLOCKED_SITES,
         }
 
+        try:
+            classifier_info = get_content_classifier().health()
+        except Exception as e:
+            classifier_info = {
+                'status': 'error',
+                'ready': False,
+                'error': str(e),
+            }
+
         return jsonify({
             'running': True,
             'snapshots': snap_count,
@@ -94,6 +112,7 @@ def create_app(agent):
             'blend_mode': 'adaptive',
             'prediction': prediction_data,
             'blocker': blocker_info,
+            'content_classifier': classifier_info,
         })
 
     @app.route('/api/predict')
@@ -138,6 +157,29 @@ def create_app(agent):
             agent.blocking_active = False
             return jsonify({'status': 'blocking_disabled'})
         return jsonify({'error': 'Blocker not available'}), 503
+
+    @app.route('/api/content/health')
+    def content_health():
+        try:
+            return jsonify(get_content_classifier().health())
+        except Exception as e:
+            return jsonify({'status': 'error', 'ready': False, 'error': str(e)}), 500
+
+    @app.route('/api/content/check', methods=['POST'])
+    def content_check():
+        try:
+            data = request.get_json() or {}
+            result = get_content_classifier().classify(
+                title=data.get('title', ''),
+                url=data.get('url', ''),
+                content=data.get('content', ''),
+            )
+            return jsonify(result)
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 503
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
 
     # ──────────────────────────────────────────────
     # PLANNER ENDPOINTS

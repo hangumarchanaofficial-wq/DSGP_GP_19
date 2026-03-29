@@ -76,6 +76,7 @@ export function useAgent(pollInterval = 5000) {
     snapshots: status?.snapshots ?? 0,
     prediction: status?.prediction ?? null,
     blocker: status?.blocker ?? null,
+    contentClassifier: status?.content_classifier ?? null,
     toggleBlocking,
     forcePrediction,
     refresh: fetchStatus,
