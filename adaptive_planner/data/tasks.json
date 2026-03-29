@@ -1,0 +1,56 @@
+{
+  "tasks": {
+    "task_3": {
+      "id": "task_3",
+      "subject": "maths ",
+      "duration_minutes": 30,
+      "priority": "high",
+      "scheduled_slot": "09:00",
+      "status": "rescheduled",
+      "created_at": "2026-03-21 16:06:25",
+      "started_at": "2026-03-21 16:06:30",
+      "completed_at": null,
+      "rescheduled_from": "09:00",
+      "rescheduled_to": "09:00",
+      "reschedule_reason": "prolonged_distraction",
+      "distraction_events": 3,
+      "focus_score_avg": 0.3274,
+      "notes": ""
+    },
+    "task_4": {
+      "id": "task_4",
+      "subject": "math lesson 1 ",
+      "duration_minutes": 30,
+      "priority": "high",
+      "scheduled_slot": "09:00",
+      "status": "rescheduled",
+      "created_at": "2026-03-22 08:44:22",
+      "started_at": "2026-03-22 08:44:27",
+      "completed_at": null,
+      "rescheduled_from": "09:00",
+      "rescheduled_to": "09:00",
+      "reschedule_reason": "prolonged_distraction",
+      "distraction_events": 1,
+      "focus_score_avg": null,
+      "notes": ""
+    },
+    "task_5": {
+      "id": "task_5",
+      "subject": "presentation ",
+      "duration_minutes": 30,
+      "priority": "high",
+      "scheduled_slot": "09:00",
+      "status": "active",
+      "created_at": "2026-03-23 11:01:11",
+      "started_at": "2026-03-23 11:01:13",
+      "completed_at": null,
+      "rescheduled_from": null,
+      "rescheduled_to": null,
+      "reschedule_reason": null,
+      "distraction_events": 0,
+      "focus_score_avg": null,
+      "notes": ""
+    }
+  },
+  "next_id": 6
+}
