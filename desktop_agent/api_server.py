@@ -1,6 +1,7 @@
 ﻿from flask import Flask, jsonify, request
 from flask_cors import CORS
 import traceback
+from datetime import datetime, timedelta
 
 try:
     from desktop_agent.config import BLOCKED_SITES
@@ -46,6 +47,49 @@ def _get_distraction_state(agent):
         }
     except Exception:
         return None
+
+
+def _parse_planner_datetime(value):
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    candidates = [
+        '%Y-%m-%d %H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S',
+        '%Y-%m-%dT%H:%M:%S.%f',
+        '%Y-%m-%dT%H:%M:%SZ',
+        '%Y-%m-%dT%H:%M:%S.%fZ',
+    ]
+    for fmt in candidates:
+        try:
+            return datetime.strptime(text, fmt)
+        except Exception:
+            continue
+    try:
+        return datetime.fromisoformat(text.replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
+def _next_planner_slot(planner, task):
+    latest_end = datetime.now() + timedelta(minutes=15)
+    for existing in planner.task_manager.get_all_tasks():
+        if existing.get('id') == task.get('id'):
+            continue
+        existing_end = _parse_planner_datetime(existing.get('planned_end'))
+        if existing_end and existing_end > latest_end:
+            latest_end = existing_end
+
+    duration = max(int(task.get('duration_minutes') or 60), 1)
+    start = latest_end.replace(second=0, microsecond=0) + timedelta(minutes=15)
+    end = start + timedelta(minutes=duration)
+    return {
+        'scheduled_slot': f"{start.strftime('%I:%M %p')} - {end.strftime('%I:%M %p')}",
+        'planned_start': start.isoformat(),
+        'planned_end': end.isoformat(),
+    }
 
 
 def create_app(agent):
@@ -238,6 +282,8 @@ def create_app(agent):
             return jsonify({
                 'tasks': planner.task_manager.get_all_tasks(),
                 'stats': planner.task_manager.get_stats(),
+                'today_study_seconds': planner.task_manager.get_today_study_seconds(),
+                'streak_info': planner.task_manager.get_streak_info(),
             })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
@@ -255,6 +301,8 @@ def create_app(agent):
                 priority=data.get('priority', 'medium'),
                 scheduled_slot=data.get('scheduled_slot'),
                 notes=data.get('notes', ''),
+                planned_start=data.get('planned_start'),
+                planned_end=data.get('planned_end'),
             )
             return jsonify({'task': task, 'stats': planner.task_manager.get_stats()})
         except Exception as e:
@@ -271,12 +319,40 @@ def create_app(agent):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/planner/tasks/<task_id>/pause', methods=['POST'])
+    def pause_task(task_id):
+        try:
+            planner = get_planner()
+            data = request.get_json() or {}
+            task = planner.task_manager.pause_task(
+                task_id,
+                remaining_seconds=data.get('remaining_seconds'),
+                elapsed_seconds=data.get('elapsed_seconds'),
+            )
+            if not task:
+                return jsonify({'error': 'Task not found'}), 404
+            return jsonify({'task': task, 'stats': planner.task_manager.get_stats()})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/tasks/<task_id>/resume', methods=['POST'])
+    def resume_task(task_id):
+        try:
+            planner = get_planner()
+            task = planner.task_manager.resume_task(task_id)
+            if not task:
+                return jsonify({'error': 'Task not found'}), 404
+            return jsonify({'task': task})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
     @app.route('/api/planner/tasks/<task_id>/complete', methods=['POST'])
     def complete_task(task_id):
         try:
             planner = get_planner()
+            data = request.get_json(silent=True) or {}
             # Use planner wrapper so profiler + trend analyzer are updated
-            task = planner.complete_task(task_id)
+            task = planner.complete_task(task_id, elapsed_seconds=data.get('elapsed_seconds'))
             if not task:
                 return jsonify({'error': 'Task not found'}), 404
             return jsonify({'task': task, 'stats': planner.task_manager.get_stats()})
@@ -303,6 +379,45 @@ def create_app(agent):
             if not deleted:
                 return jsonify({'error': 'Task not found'}), 404
             return jsonify({'deleted': True, 'stats': planner.task_manager.get_stats()})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/check-missed', methods=['POST'])
+    def check_missed_tasks():
+        try:
+            planner = get_planner()
+            missed = planner.task_manager.get_missed_tasks()
+            return jsonify({'missed_tasks': missed})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/tasks/<task_id>/handle-missed', methods=['POST'])
+    def handle_missed_task(task_id):
+        try:
+            planner = get_planner()
+            task = planner.task_manager.get_task(task_id)
+            if not task:
+                return jsonify({'error': 'Task not found'}), 404
+
+            data = request.get_json() or {}
+            action = data.get('action')
+
+            if action == 'delete':
+                planner.task_manager.delete_task(task_id)
+                return jsonify({'deleted': True, 'stats': planner.task_manager.get_stats()})
+
+            if action == 'reschedule':
+                slot = _next_planner_slot(planner, task)
+                updated = planner.task_manager.reschedule_task(
+                    task_id,
+                    slot['scheduled_slot'],
+                    reason='missed_task_rescheduled',
+                    planned_start=slot['planned_start'],
+                    planned_end=slot['planned_end'],
+                )
+                return jsonify({'task': updated, 'stats': planner.task_manager.get_stats()})
+
+            return jsonify({'error': 'Unsupported action'}), 400
         except Exception as e:
             return jsonify({'error': str(e)}), 500
 
