@@ -818,25 +818,65 @@ class TaskManager:
 
     # ── Task CRUD ────────────────────────────────────────────────
 
+    def _parse_datetime(self, value):
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value
+        text = str(value).strip()
+        if not text:
+            return None
+        candidates = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S.%f',
+            '%Y-%m-%dT%H:%M:%SZ',
+            '%Y-%m-%dT%H:%M:%S.%fZ',
+        ]
+        for fmt in candidates:
+            try:
+                return datetime.strptime(text, fmt)
+            except Exception:
+                continue
+        try:
+            return datetime.fromisoformat(text.replace('Z', '+00:00'))
+        except Exception:
+            return None
+
+    def _task_matches_today(self, task):
+        today = datetime.now().date()
+        for key in ('completed_at', 'session_started_at', 'started_at', 'created_at'):
+            dt = self._parse_datetime(task.get(key))
+            if dt and dt.date() == today:
+                return True
+        return False
+
     def add_task(self, subject, duration_minutes, priority='medium',
-                 scheduled_slot=None, notes=''):
+                 scheduled_slot=None, notes='', planned_start=None,
+                 planned_end=None):
         task_id = f'task_{self.next_id}'
         self.next_id += 1
+        duration_minutes = int(duration_minutes or 0)
         task = {
             'id': task_id,
             'subject': subject,
             'duration_minutes': duration_minutes,
             'priority': priority,
             'scheduled_slot': scheduled_slot,
+            'planned_start': planned_start,
+            'planned_end': planned_end,
             'status': 'pending',
             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'started_at': None,
+            'session_started_at': None,
             'completed_at': None,
             'rescheduled_from': None,
             'rescheduled_to': None,
             'reschedule_reason': None,
             'distraction_events': 0,
             'focus_score_avg': None,
+            'remaining_seconds': max(duration_minutes, 0) * 60,
+            'studied_seconds': 0,
             'notes': notes,
         }
         self.tasks[task_id] = task
@@ -860,17 +900,58 @@ class TaskManager:
         task = self.tasks.get(task_id)
         if not task:
             return None
+        for other in self.tasks.values():
+            if other['id'] != task_id and other.get('status') == 'active':
+                other['status'] = 'pending'
+                other['session_started_at'] = None
         task['status'] = 'active'
-        task['started_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        if not task.get('started_at'):
+            task['started_at'] = now
+        task['session_started_at'] = now
+        if task.get('remaining_seconds') is None:
+            task['remaining_seconds'] = max(int(task.get('duration_minutes') or 0), 0) * 60
         self._save_tasks()
         return task
 
-    def complete_task(self, task_id):
+    def pause_task(self, task_id, remaining_seconds=None, elapsed_seconds=None):
         task = self.tasks.get(task_id)
         if not task:
             return None
+        studied = max(int(elapsed_seconds or 0), 0)
+        if studied:
+            task['studied_seconds'] = max(int(task.get('studied_seconds') or 0), 0) + studied
+        if remaining_seconds is None:
+            total_seconds = max(int(task.get('duration_minutes') or 0), 0) * 60
+            remaining_seconds = max(total_seconds - int(task.get('studied_seconds') or 0), 0)
+        task['remaining_seconds'] = max(int(remaining_seconds or 0), 0)
+        task['status'] = 'pending' if not task.get('rescheduled_to') else 'rescheduled'
+        task['session_started_at'] = None
+        self._save_tasks()
+        return task
+
+    def resume_task(self, task_id):
+        task = self.tasks.get(task_id)
+        if not task:
+            return None
+        if task.get('remaining_seconds') is None:
+            task['remaining_seconds'] = max(int(task.get('duration_minutes') or 0), 0) * 60
+        task['status'] = 'active'
+        task['session_started_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self._save_tasks()
+        return task
+
+    def complete_task(self, task_id, elapsed_seconds=None):
+        task = self.tasks.get(task_id)
+        if not task:
+            return None
+        studied = max(int(elapsed_seconds or 0), 0)
+        if studied:
+            task['studied_seconds'] = max(int(task.get('studied_seconds') or 0), 0) + studied
         task['status'] = 'completed'
         task['completed_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        task['remaining_seconds'] = 0
+        task['session_started_at'] = None
         self.history.append({**task})
         self._save_tasks()
         self._save_history()
@@ -882,18 +963,24 @@ class TaskManager:
             return None
         task['status'] = 'missed'
         task['reschedule_reason'] = reason
+        task['session_started_at'] = None
         self.history.append({**task})
         self._save_tasks()
         self._save_history()
         return task
 
-    def reschedule_task(self, task_id, new_slot, reason='distraction_detected'):
+    def reschedule_task(self, task_id, new_slot, reason='distraction_detected',
+                        planned_start=None, planned_end=None):
         task = self.tasks.get(task_id)
         if not task:
             return None
         task['rescheduled_from'] = task['scheduled_slot']
         task['rescheduled_to'] = new_slot
         task['scheduled_slot'] = new_slot
+        if planned_start is not None:
+            task['planned_start'] = planned_start
+        if planned_end is not None:
+            task['planned_end'] = planned_end
         task['status'] = 'rescheduled'
         task['reschedule_reason'] = reason
         self._save_tasks()
@@ -931,6 +1018,26 @@ class TaskManager:
             'active': len(active),
             'completion_rate': round(len(completed) / max(len(all_tasks), 1) * 100, 1),
         }
+
+    def get_today_study_seconds(self):
+        total = 0
+        for task in self.tasks.values():
+            if self._task_matches_today(task):
+                total += int(task.get('studied_seconds') or 0)
+        return total
+
+    def get_missed_tasks(self, grace_seconds=60):
+        now = datetime.now()
+        results = []
+        for task in self.tasks.values():
+            if task.get('status') not in ('pending', 'rescheduled'):
+                continue
+            planned_start = self._parse_datetime(task.get('planned_start'))
+            if not planned_start:
+                continue
+            if (now - planned_start).total_seconds() >= grace_seconds:
+                results.append(task)
+        return results
 
     def delete_task(self, task_id):
         if task_id in self.tasks:
@@ -1151,9 +1258,9 @@ class AdaptivePlanner:
 
     # ── Task wrappers (with profiler + trend hooks) ──────────────
 
-    def complete_task(self, task_id: str):
+    def complete_task(self, task_id: str, elapsed_seconds: int = None):
         """Complete a task and update profiler + trend analyzer."""
-        task = self.task_manager.complete_task(task_id)
+        task = self.task_manager.complete_task(task_id, elapsed_seconds)
         if task:
             self.profiler.record_completion(task, completed=True)
             self.trend_analyzer.record_task_completed(task)
