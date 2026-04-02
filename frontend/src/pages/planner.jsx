@@ -1,1472 +1,2955 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import Sidebar from '../components/Sidebar';
-import Footer from '../components/Footer';
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Sidebar from "../components/Sidebar";
+import Footer from "../components/Footer";
+import { useTheme } from "../context/ThemeContext";
 import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  Cell,
-} from 'recharts';
+  CalendarCheck,AlertTriangle,Coffee,Brain,Play,X,Trash2,RefreshCw,AlertCircle,
+  Zap,Flame,Trophy,TrendingUp,Sparkles,Pause,ArrowRight,ChevronDown,
+} from "lucide-react";
+import { FocusTimer, PriorityDot, ProbabilityRing, StatusBadge, Timeline } from "./planner/PlannerSections";
 import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  BarChart3,
-  BookOpen,
-  Brain,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  Flame,
-  Layers3,
-  Lightbulb,
-  Plus,
-  RefreshCw,
-  Target,
-  TimerReset,
-  Trash2,
-  TrendingDown,
-  TrendingUp,
-  UserRound,
-  WandSparkles,
-  XCircle,
-  Zap,
-} from 'lucide-react';
+  formatClockDuration,
+  formatCompactStudyDuration,
+  formatHoursMinutesFromSeconds,
+  formatSleepDuration,
+  formatStudyDuration,
+  getSleepDateKey,
+  getSleepStorageKey,
+  getSliderFillPercentage,
+  getSocialStorageKey,
+  getTaskStartTime,
+  parseDateValue,
+  readSleepEntry,
+  readSocialEntry,
+  sortTasksByStartTime,
+  writeSleepEntry,
+  writeSocialEntry,
+  clampSleepMinutes,
+} from "./planner/plannerUtils";
 
-const API = '/api/planner';
-const TIME_SLOTS = [
-  '08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
-  '16:00', '16:30', '17:00', '17:30', '18:00', '18:30', '19:00', '19:30',
-  '20:00', '20:30', '21:00', '21:30', '22:00',
-];
-
-const shell = {
-  background: '#000000',
-};
-
-const panel = {
-  background: 'linear-gradient(180deg, rgba(8,8,8,0.98), rgba(2,2,2,0.98))',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: 28,
-  boxShadow: '0 22px 56px rgba(0,0,0,0.22)',
-};
-
-function textOf(value) {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  for (const key of ['message', 'suggested_action', 'description', 'type']) {
-    if (typeof value?.[key] === 'string') return value[key];
-  }
-  return '';
-}
-
-function normalizeText(value, fallback = '--') {
-  if (value === undefined || value === null) return fallback;
-  const text = String(value).trim();
-  return text || fallback;
-}
-
-function normalizeTask(task) {
-  return {
-    ...task,
-    subject: normalizeText(task.subject, 'Untitled task'),
-    notes: typeof task.notes === 'string' ? task.notes.trim() : '',
-    reschedule_reason: typeof task.reschedule_reason === 'string' ? task.reschedule_reason.trim() : '',
-  };
-}
-
-function trendMeta(trend) {
-  if (trend === 'improving') {
-    return { icon: TrendingUp, color: '#3ddc97', label: 'Improving' };
-  }
-  if (trend === 'declining') {
-    return { icon: TrendingDown, color: '#ff7f6b', label: 'Declining' };
-  }
-  return { icon: CalendarDays, color: '#ffcf66', label: 'Stable' };
-}
-
-function Panel({ title, eyebrow, action, children }) {
-  return (
-    <section className="p-5 lg:p-6" style={panel}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          {eyebrow ? (
-            <div
-              className="mb-2 text-[11px] font-semibold uppercase tracking-[0.24em]"
-              style={{ color: 'rgba(207,216,236,0.54)' }}
-            >
-              {eyebrow}
-            </div>
-          ) : null}
-          <h2 className="text-xl font-semibold tracking-tight text-white">{title}</h2>
-        </div>
-        {action}
-      </div>
-      <div className="mt-6">{children}</div>
-    </section>
-  );
-}
-
-function PlannerButton({ children, icon: Icon, onClick, disabled, variant = 'primary' }) {
-  const variants = {
-    primary: {
-      background: 'linear-gradient(135deg, #ff8c67, #ffb163)',
-      color: '#11151f',
-      border: 'none',
-    },
-    ghost: {
-      background: 'rgba(255,255,255,0.04)',
-      color: '#f7f8fb',
-      border: '1px solid rgba(255,255,255,0.08)',
-    },
-    subtle: {
-      background: 'rgba(92,170,255,0.12)',
-      color: '#a9ccff',
-      border: '1px solid rgba(92,170,255,0.18)',
-    },
-  };
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition"
-      style={{
-        opacity: disabled ? 0.55 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        ...variants[variant],
-      }}
-    >
-      {Icon ? <Icon size={16} /> : null}
-      {children}
-    </button>
-  );
-}
-
-function MetricBlock({ icon: Icon, label, value, helper, color = '#5caaff' }) {
-  return (
-    <div
-      className="rounded-[24px] p-4"
-      style={{ background: 'rgba(255,255,255,0.035)', border: '1px solid rgba(255,255,255,0.08)' }}
-    >
-      <div className="mb-4 flex items-center justify-between">
-        <span
-          className="text-[11px] font-semibold uppercase tracking-[0.2em]"
-          style={{ color: 'rgba(207,216,236,0.56)' }}
-        >
-          {label}
-        </span>
-        <div
-          className="flex h-10 w-10 items-center justify-center rounded-2xl"
-          style={{ background: `${color}22`, color }}
-        >
-          <Icon size={18} />
-        </div>
-      </div>
-      <div className="text-3xl font-semibold tracking-tight text-white">{value}</div>
-      {helper ? (
-        <div className="mt-2 text-xs leading-5" style={{ color: 'rgba(207,216,236,0.64)' }}>
-          {helper}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function StatusTile({ label, value, helper, tone = '#f7f8fb' }) {
-  return (
-    <div
-      className="rounded-[24px] p-4"
-      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
-    >
-      <div
-        className="text-[11px] font-semibold uppercase tracking-[0.18em]"
-        style={{ color: 'rgba(207,216,236,0.5)' }}
-      >
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-semibold text-white" style={{ color: tone }}>
-        {value}
-      </div>
-      <div className="mt-1 text-sm" style={{ color: 'rgba(207,216,236,0.64)' }}>
-        {helper}
-      </div>
-    </div>
-  );
-}
-
-function TaskPill({ children, color = '#d4d8e2', background = 'rgba(255,255,255,0.08)' }) {
-  return (
-    <span
-      className="rounded-full px-3 py-1 text-xs font-semibold"
-      style={{ color, background }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function EmptyState({ icon: Icon, title, body }) {
-  return (
-    <div
-      className="rounded-[24px] px-6 py-10 text-center"
-      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-    >
-      <Icon size={24} className="mx-auto mb-3" style={{ color: 'rgba(207,216,236,0.42)' }} />
-      <div className="text-base font-semibold text-white">{title}</div>
-      <div className="mt-2 text-sm" style={{ color: 'rgba(207,216,236,0.62)' }}>
-        {body}
-      </div>
-    </div>
-  );
-}
-
-function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      className="rounded-2xl px-3 py-2 text-xs"
-      style={{ background: 'rgba(12,16,27,0.96)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-    >
-      <div style={{ color: 'rgba(207,216,236,0.62)' }}>{label}</div>
-      {payload.map((entry) => (
-        <div key={`${entry.dataKey}-${entry.name}`} style={{ color: entry.color }}>
-          {entry.name}: {entry.value}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function CapabilityNotice({ capabilities }) {
-  const missing = [];
-  if (!capabilities.analytics) missing.push('analytics');
-  if (!capabilities.schedule) missing.push('smart schedule');
-  if (!capabilities.profile) missing.push('profile');
-
-  if (!missing.length) return null;
-
-  return (
-    <div
-      className="mb-6 flex flex-col gap-3 rounded-[24px] px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-      style={{
-        background: 'rgba(255,127,107,0.08)',
-        border: '1px solid rgba(255,127,107,0.16)',
-        color: '#ffd0c6',
-      }}
-    >
-      <div className="flex items-start gap-3">
-        <AlertTriangle size={18} className="mt-0.5 shrink-0" />
-        <div>
-          <div className="text-sm font-semibold text-white">Advanced planner services are unavailable</div>
-          <div className="mt-1 text-sm" style={{ color: 'rgba(255,220,215,0.82)' }}>
-            Missing: {missing.join(', ')}. Restart the desktop agent so the current planner API is loaded.
-          </div>
-        </div>
-      </div>
-      <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'rgba(255,220,215,0.68)' }}>
-        Backend mismatch
-      </div>
-    </div>
-  );
-}
-
+// Main planner page that combines task management, timers, and prediction results.
 export default function Planner() {
-  const [tab, setTab] = useState('overview');
-  const [loading, setLoading] = useState(false);
-  const [contentLoading, setContentLoading] = useState(false);
-  const [scheduleLoading, setScheduleLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [profile, setProfile] = useState({
-    age: 21,
-    gender: 'Male',
-    part_time_job: 0,
-    study_hours_per_day: 4,
-    sleep_hours: 7,
-    total_social_hours: 2,
-  });
-  const [tasks, setTasks] = useState([]);
-  const [taskStats, setTaskStats] = useState({});
-  const [streak, setStreak] = useState({ focus_streak: 0, best_streak: 0 });
-  const [analytics, setAnalytics] = useState(null);
-  const [smartSchedule, setSmartSchedule] = useState(null);
-  const [profilerData, setProfilerData] = useState(null);
-  const [distraction, setDistraction] = useState(null);
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const predictionInFlightRef = useRef(false);
+  const latestFormRef = useRef(null);
+  const latestTasksRef = useRef([]);
+  const latestPredictionRef = useRef(null);
+  const visiblePredictionRef = useRef(null);
+  const latestNotificationPermissionRef = useRef(
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported",
+  );
+  const lastStartReminderNotificationRef = useRef(null);
+  const lastRescheduleNotificationRef = useRef(null);
+  const [activeTaskRemainingAtStart, setActiveTaskRemainingAtStart] = useState(0);
+  const [activeTaskSessionStartedAt, setActiveTaskSessionStartedAt] = useState(null);
+  const [socialSeconds, setSocialSeconds] = useState(0);
+  const [socialTimerRunning, setSocialTimerRunning] = useState(false);
+  const [socialTimerStartedAt, setSocialTimerStartedAt] = useState(null);
+  const [socialTimerTick, setSocialTimerTick] = useState(0);
+  const [socialStorageLoaded, setSocialStorageLoaded] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "unsupported",
+  );
+  // Demo note: the shared helpers/UI pieces were moved into ./planner/*
+  // so this file mostly shows the planner state, effects, and API flow.
+
+  // Calculates the elapsed time for the current social-media session.
+  const getCurrentSocialSessionSeconds = useCallback(() => {
+    if (!socialTimerRunning || !socialTimerStartedAt) return 0;
+    const startedAt = parseDateValue(socialTimerStartedAt);
+    if (!startedAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - startedAt.getTime()) / 1000));
+  }, [socialTimerRunning, socialTimerStartedAt]);
+
+  // Syncs the browser notification permission into React state and refs.
+  const syncNotificationPermission = useCallback(() => {
+    const nextPermission =
+      typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+    latestNotificationPermissionRef.current = nextPermission;
+    setNotificationPermission(nextPermission);
+    return nextPermission;
+  }, []);
+
+  // Requests browser notification access when the user has not decided yet.
+  const requestBrowserNotificationPermission = useCallback(async () => {
+    if (typeof Notification === "undefined") return "unsupported";
+
+    const currentPermission = syncNotificationPermission();
+    if (currentPermission !== "default") return currentPermission;
+
+    try {
+      const nextPermission = await Notification.requestPermission();
+      latestNotificationPermissionRef.current = nextPermission;
+      setNotificationPermission(nextPermission);
+      return nextPermission;
+    } catch (error) {
+      console.error("Failed to request notification permission:", error);
+      return latestNotificationPermissionRef.current;
+    }
+  }, [syncNotificationPermission]);
+
+  // Shows a browser notification for reminders and planner alerts.
+  const showBrowserNotification = useCallback(
+    async ({ title, body, tag }) => {
+      if (typeof window === "undefined" || typeof Notification === "undefined") return;
+      if (document.visibilityState === "visible") return;
+
+      let permission = latestNotificationPermissionRef.current;
+      if (permission === "default") {
+        permission = await requestBrowserNotificationPermission();
+      }
+
+      if (permission !== "granted") return;
+
+      try {
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.ready;
+          await registration.showNotification(title, {
+            body,
+            tag,
+            renotify: true,
+            requireInteraction: true,
+          });
+          return;
+        }
+
+        const notification = new Notification(title, {
+          body,
+          tag,
+          renotify: true,
+          requireInteraction: true,
+        });
+
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
+      } catch (error) {
+        console.error("Failed to show browser notification:", error);
+      }
+    },
+    [requestBrowserNotificationPermission],
+  );
+
+  // Starts a study session and mirrors the backend timer state in the UI.
+  const handleStartTimer = async (task) => {
+    try {
+      if (socialTimerRunning) {
+        stopSocialTimer();
+      }
+
+      const res = await fetch(`http://127.0.0.1:5000/api/planner/tasks/${task.id}/start`, {
+        method: "POST"
+      });
+  
+      const data = await res.json();
+  
+      setActiveTaskId(task.id);
+      const nextRemainingSeconds =
+        data.task?.remaining_seconds ??
+        data.remaining_seconds ??
+        task.remaining_seconds ??
+        task.duration_minutes * 60;
+      const sessionStartedAt = data.task?.session_started_at ?? data.task?.start_time ?? new Date().toISOString();
+
+      setTimeLeft(nextRemainingSeconds);
+      setActiveTaskRemainingAtStart(nextRemainingSeconds);
+      setActiveTaskSessionStartedAt(sessionStartedAt);
+      setIsRunning(true);
+  
+      fetchTasks();
+    } catch (error) {
+      console.error("Start timer error:", error);
+    }
+  };
+
+  // Pauses the current task and stores the latest elapsed time.
+  const handlePauseTimer = async () => {
+    try {
+      if (!activeTaskId) return;
+      const elapsedSeconds = getCurrentSessionElapsedSeconds();
+  
+      await fetch(`http://127.0.0.1:5000/api/planner/tasks/${activeTaskId}/pause`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          remaining_seconds: timeLeft,
+          elapsed_seconds: elapsedSeconds,
+        })
+      });
+  
+      setIsRunning(false);
+      setActiveTaskId(null);
+      setTimeLeft(0);
+      setActiveTaskRemainingAtStart(0);
+      setActiveTaskSessionStartedAt(null);
+  
+      fetchTasks();
+    } catch (error) {
+      console.error("Pause timer error:", error);
+    }
+  };
+  // Resumes a previously started task from its saved remaining time.
+  const handleResumeTimer = async (task) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:5000/api/planner/tasks/${task.id}/resume`, {
+        method: "POST"
+      });
+  
+      const data = await res.json();
+  
+      setActiveTaskId(task.id);
+      const nextRemainingSeconds =
+        data.task?.remaining_seconds ??
+        data.remaining_seconds ??
+        task.remaining_seconds ??
+        task.duration_minutes * 60;
+      const sessionStartedAt = data.task?.session_started_at ?? data.task?.start_time ?? new Date().toISOString();
+
+      setTimeLeft(nextRemainingSeconds);
+      setActiveTaskRemainingAtStart(nextRemainingSeconds);
+      setActiveTaskSessionStartedAt(sessionStartedAt);
+      setIsRunning(true);
+  
+      fetchTasks();
+    } catch (error) {
+      console.error("Resume timer error:", error);
+    }
+  };
+
+  // Computes how many seconds have passed in the active study session.
+  const getCurrentSessionElapsedSeconds = useCallback(() => {
+    if (!activeTaskSessionStartedAt) return 0;
+
+    const startedAt = parseDateValue(activeTaskSessionStartedAt);
+    if (!startedAt) {
+      return Math.max(0, activeTaskRemainingAtStart - timeLeft);
+    }
+
+    const elapsedSeconds = Math.floor((Date.now() - startedAt.getTime()) / 1000);
+    return Math.max(0, Math.min(activeTaskRemainingAtStart, elapsedSeconds));
+  }, [activeTaskRemainingAtStart, activeTaskSessionStartedAt, timeLeft]);
+
+  // Keeps the on-screen countdown in sync once a task session is active.
+  useEffect(() => {
+    let timer;
+  
+    if (isRunning && activeTaskId && activeTaskSessionStartedAt) {
+      timer = setInterval(() => {
+        const elapsedSeconds = getCurrentSessionElapsedSeconds();
+        const nextRemaining = Math.max(0, activeTaskRemainingAtStart - elapsedSeconds);
+
+        setTimeLeft(nextRemaining);
+
+        if (nextRemaining <= 0) {
+          setIsRunning(false);
+          autoCompleteTask(activeTaskId, activeTaskRemainingAtStart);
+        }
+      }, 1000);
+    }
+
+    return () => clearInterval(timer);
+  }, [
+    activeTaskId,
+    activeTaskRemainingAtStart,
+    activeTaskSessionStartedAt,
+    getCurrentSessionElapsedSeconds,
+    isRunning,
+  ]);
+
+  // Finishes a task early using the current tracked study time.
+  const handleFinishTask = async (task) => {
+    try {
+      const elapsedSeconds =
+        String(task.id) === String(activeTaskId)
+          ? getCurrentSessionElapsedSeconds()
+          : 0;
+  
+      await autoCompleteTask(task.id, elapsedSeconds);
+    } catch (error) {
+      console.error("Finish task error:", error);
+    }
+  };
+
+   
+
+    // Completes a task automatically when its countdown reaches zero.
+    const autoCompleteTask = async (taskId, elapsedSeconds = null) => {
+      try {
+        let finalElapsedSeconds = elapsedSeconds;
+
+        if (finalElapsedSeconds === null && String(taskId) === String(activeTaskId)) {
+          finalElapsedSeconds = getCurrentSessionElapsedSeconds();
+        }
+    
+        const res = await fetch(`http://127.0.0.1:5000/api/planner/tasks/${taskId}/complete`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            elapsed_seconds: finalElapsedSeconds,
+          }),
+        });
+    
+        await res.json();
+    
+        setActiveTaskId(null);
+        setTimeLeft(0);
+        setIsRunning(false);
+        setActiveTaskRemainingAtStart(0);
+        setActiveTaskSessionStartedAt(null);
+    
+        fetchTasks();
+      } catch (error) {
+        console.error("Auto complete error:", error);
+      }
+    };
+
+  // Formats a countdown value into mm:ss for the task controls.
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
+
+  const { dark } = useTheme();
+
   const [result, setResult] = useState(null);
-  const [contentResult, setContentResult] = useState(null);
-  const [taskFilter, setTaskFilter] = useState('all');
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState("all");
+  const [profileOpen, setProfileOpen] = useState(true);
+
+  const [form, setForm] = useState({
+    age: 20,
+    gender: "Male",
+    part_time_job: "No",
+    study_hours_per_day: 3,
+    sleep_hours: 7,
+    total_social_hours: 1.5,
+  });
+  const [sleepDateKey, setSleepDateKey] = useState(() => getSleepDateKey());
+  const [dailySleepMinutes, setDailySleepMinutes] = useState(0);
+  const [initialSleepMinutes, setInitialSleepMinutes] = useState(0);
+  const [additionalSleepMinutes, setAdditionalSleepMinutes] = useState(0);
+  const [showInitialSleepPrompt, setShowInitialSleepPrompt] = useState(false);
+  const [initialSleepInput, setInitialSleepInput] = useState({
+    hours: "",
+    minutes: "",
+  });
+  const [sleepInput, setSleepInput] = useState({
+    hours: "",
+    minutes: "",
+  });
+  const [sleepError, setSleepError] = useState("");
+  const canShowPrediction = !showInitialSleepPrompt;
+
+  // Stops the social-media timer and persists the accumulated time.
+  const stopSocialTimer = useCallback(() => {
+    if (!socialTimerRunning) return;
+
+    const elapsedSeconds = getCurrentSocialSessionSeconds();
+    const nextTotal = socialSeconds + elapsedSeconds;
+
+    setSocialSeconds(nextTotal);
+    setSocialTimerRunning(false);
+    setSocialTimerStartedAt(null);
+    setSocialTimerTick(0);
+    writeSocialEntry(sleepDateKey, nextTotal, false, null);
+  }, [getCurrentSocialSessionSeconds, sleepDateKey, socialSeconds, socialTimerRunning]);
+
+  const [tasks, setTasks] = useState([]);
+  const [taskStats, setTaskStats] = useState(null);
+  const [streakInfo, setStreakInfo] = useState(null);
+  const [persistedTodayStudySeconds, setPersistedTodayStudySeconds] = useState(0);
   const [showAddTask, setShowAddTask] = useState(false);
+  
   const [newTask, setNewTask] = useState({
     subject: '',
-    duration_minutes: 45,
+    duration_minutes: 60,
     priority: 'medium',
-    scheduled_slot: '09:00',
+    scheduled_slot: '',
+    start_hour: '12',
+    start_minute: '00',
+    start_meridiem: 'AM',
     notes: '',
   });
-  const [contentDraft, setContentDraft] = useState({ title: '', url: '', content: '' });
-  const [capabilities, setCapabilities] = useState({
-    analytics: true,
-    profile: true,
-    schedule: true,
-  });
 
-  function updateCapability(key, value) {
-    setCapabilities((current) => (current[key] === value ? current : { ...current, [key]: value }));
-  }
+  const [distractionState, setDistractionState] = useState(null);
+  const [rescheduleAlert, setRescheduleAlert] = useState(null);
+  const [startReminderTask, setStartReminderTask] = useState(null);
+  const [startReminderCooldown, setStartReminderCooldown] = useState({});
+  const [showBreakDurationPicker, setShowBreakDurationPicker] = useState(false);
+  const [breakMinutesInput, setBreakMinutesInput] = useState(15);
+  const [shortBreakEndAt, setShortBreakEndAt] = useState(null);
+  const [shortBreakRemainingSeconds, setShortBreakRemainingSeconds] = useState(0);
+  const [breakMotivationIndex, setBreakMotivationIndex] = useState(0);
+  const notificationsMutedUntil = shortBreakEndAt || 0;
+  const shortBreakActive = !!shortBreakEndAt && Date.now() < shortBreakEndAt;
+  
 
-  async function fetchJson(path, options = {}, capabilityKey = null) {
-    const response = await fetch(`${API}${path}`, options);
-    let data = null;
-    try {
-      data = await response.json();
-    } catch {
-      data = null;
+  // Updates a single field inside the student profile form state.
+  const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+
+  // Validates and updates the hour/minute inputs used for sleep logging.
+  const updateSleepField = (field, value, setter) => {
+    if (value === "") {
+      setter((prev) => ({ ...prev, [field]: "" }));
+      return;
     }
 
-    if (capabilityKey) {
-      updateCapability(capabilityKey, response.status !== 404);
+    const parsed = Number(value);
+    if (Number.isNaN(parsed) || parsed < 0) return;
+
+    if (field === "hours") {
+      setter((prev) => ({ ...prev, hours: String(Math.min(24, parsed)) }));
+      return;
     }
 
-    if (!response.ok) {
-      const failure = new Error(data?.error || data?.message || `Request failed (${response.status})`);
-      failure.status = response.status;
-      throw failure;
+    setter((prev) => ({ ...prev, minutes: String(Math.min(59, parsed)) }));
+  };
+
+  // Converts the sleep input fields into a single total-minutes value.
+  const getSleepInputMinutes = ({ hours, minutes }) => {
+    const parsedHours = Number(hours || 0);
+    const parsedMinutes = Number(minutes || 0);
+
+    if (
+      Number.isNaN(parsedHours) ||
+      Number.isNaN(parsedMinutes) ||
+      parsedHours < 0 ||
+      parsedMinutes < 0
+    ) {
+      return null;
     }
 
-    return data;
-  }
+    if (parsedHours > 24 || parsedMinutes > 59) return null;
+    return parsedHours * 60 + parsedMinutes;
+  };
 
-  async function fetchTasks() {
-    try {
-      const data = await fetchJson('/tasks');
-      setTasks((data.tasks || []).map(normalizeTask));
-      setTaskStats(data.stats || {});
-    } catch {}
-  }
+  // Applies a new sleep entry and updates both local state and local storage.
+  const applySleepMinutes = (minutesToAdd, { replace = false, requireInitial = false } = {}) => {
+    const parsedMinutes = clampSleepMinutes(minutesToAdd);
+    const nextInitialMinutes = replace ? parsedMinutes : initialSleepMinutes;
+    const nextAdditionalMinutes = replace
+      ? additionalSleepMinutes
+      : additionalSleepMinutes + parsedMinutes;
+    const nextTotal = nextInitialMinutes + nextAdditionalMinutes;
+    const nextInitialLogged = requireInitial || replace || !showInitialSleepPrompt;
 
-  async function fetchAnalytics() {
+    if (parsedMinutes < 0) {
+      setSleepError("Sleep time cannot be negative.");
+      return false;
+    }
+
+    if ((!replace && parsedMinutes === 0) || nextTotal > 24 * 60) {
+      setSleepError("Please enter a realistic sleep value between 0 minutes and 24 hours.");
+      return false;
+    }
+
+    writeSleepEntry(
+      sleepDateKey,
+      nextTotal,
+      nextInitialLogged,
+      nextInitialMinutes,
+      nextAdditionalMinutes,
+    );
+    setDailySleepMinutes(nextTotal);
+    setInitialSleepMinutes(nextInitialMinutes);
+    setAdditionalSleepMinutes(nextAdditionalMinutes);
+    setShowInitialSleepPrompt(!nextInitialLogged);
+    setSleepError("");
+    return true;
+  };
+  // Converts a 12-hour time input into 24-hour values for scheduling.
+  const convertTo24Hour = (hour, minute, meridiem) => {
+    let h = parseInt(hour, 10);
+    const m = parseInt(minute, 10);
+  
+    if (meridiem === "PM" && h !== 12) h += 12;
+    if (meridiem === "AM" && h === 12) h = 0;
+  
+    return { hour24: h, minute: m };
+  };
+  
+  // Formats a 24-hour clock time into the planner's 12-hour display format.
+  const format12Hour = (hours24, minutes) => {
+    const meridiem = hours24 >= 12 ? "PM" : "AM";
+    let hour12 = hours24 % 12;
+    if (hour12 === 0) hour12 = 12;
+  
+    return `${hour12}:${String(minutes).padStart(2, "0")} ${meridiem}`;
+  };
+  
+  // Builds the scheduled slot, start time, and end time for a new task.
+  const calculateTimeSlot = (task) => {
+    const { hour24, minute } = convertTo24Hour(
+      task.start_hour,
+      task.start_minute,
+      task.start_meridiem
+    );
+  
+    const startDate = new Date();
+    startDate.setHours(hour24, minute, 0, 0);
+  
+    const endDate = new Date(startDate.getTime() + task.duration_minutes * 60000);
+  
+    const startLabel = format12Hour(startDate.getHours(), startDate.getMinutes());
+    const endLabel = format12Hour(endDate.getHours(), endDate.getMinutes());
+  
+    return {
+      scheduled_slot: `${startLabel} - ${endLabel}`,
+      planned_start: startDate.toISOString(),
+      planned_end: endDate.toISOString(),
+    };
+  };
+
+  // Pulls the latest planner task list and summary stats from the backend.
+  const fetchTasks = useCallback(async () => {
     try {
-      const data = await fetchJson('/analytics', {}, 'analytics');
-      setAnalytics(data);
-      if (data?.streak_info) setStreak(data.streak_info);
-    } catch (err) {
-      if (err.status === 404) {
-        setAnalytics(null);
+      const res = await fetch("/api/planner/tasks");
+      if (res.ok) {
+        const d = await res.json();
+        setTasks(d.tasks || []);
+        setTaskStats(d.stats || null);
+        setPersistedTodayStudySeconds(Number(d.today_study_seconds || 0));
+        if (d.streak_info) setStreakInfo(d.streak_info);
       }
-    }
-  }
+    } catch (_) {}
+  }, []);
 
-  async function fetchProfile() {
+  // Fetches distraction status and any automatic rescheduling decisions.
+  const fetchDistraction = useCallback(async () => {
     try {
-      const data = await fetchJson('/profile', {}, 'profile');
-      setProfilerData(data);
-    } catch (err) {
-      if (err.status === 404) {
-        setProfilerData(null);
+      if (Date.now() < notificationsMutedUntil) return;
+      const res = await fetch("/api/planner/distraction-check");
+      if (res.ok) {
+        const d = await res.json();
+        setDistractionState(d.distraction_state);
+        if (d.auto_reschedule) {
+          setRescheduleAlert(d.auto_reschedule);
+          fetchTasks();
+        }
       }
-    }
-  }
-
-  async function fetchDistraction() {
-    try {
-      const data = await fetchJson('/distraction-check');
-      setDistraction(data);
-    } catch {}
-  }
-
-  async function fetchSmartSchedule() {
-    setScheduleLoading(true);
-    try {
-      const data = await fetchJson('/smart-schedule', {}, 'schedule');
-      setSmartSchedule(data);
-    } catch (err) {
-      if (err.status === 404) {
-        setSmartSchedule(null);
-      }
-    } finally {
-      setScheduleLoading(false);
-    }
-  }
-
-  async function refreshAll() {
-    await Promise.all([fetchTasks(), fetchAnalytics(), fetchProfile(), fetchDistraction()]);
-  }
+    } catch (_) {}
+  }, [fetchTasks, notificationsMutedUntil]);
 
   useEffect(() => {
-    refreshAll();
-    const tasksTimer = setInterval(fetchTasks, 15000);
-    const analyticsTimer = setInterval(fetchAnalytics, 60000);
-    const distractionTimer = setInterval(fetchDistraction, 20000);
+    fetchTasks();
+    fetchDistraction();
+    const i = setInterval(() => {
+      fetchTasks();
+      fetchDistraction();
+    }, 10000);
+    return () => clearInterval(i);
+  }, [fetchTasks, fetchDistraction]);
+
+  useEffect(() => {
+    syncNotificationPermission();
+
+    const handleVisibilityOrFocus = () => {
+      syncNotificationPermission();
+    };
+
+    const requestOnInteraction = () => {
+      if (latestNotificationPermissionRef.current !== "default") return;
+      requestBrowserNotificationPermission();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    window.addEventListener("pointerdown", requestOnInteraction, { passive: true });
+    window.addEventListener("keydown", requestOnInteraction);
 
     return () => {
-      clearInterval(tasksTimer);
-      clearInterval(analyticsTimer);
-      clearInterval(distractionTimer);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      window.removeEventListener("pointerdown", requestOnInteraction);
+      window.removeEventListener("keydown", requestOnInteraction);
+    };
+  }, [requestBrowserNotificationPermission, syncNotificationPermission]);
+
+  useEffect(() => {
+    const syncSleepDate = () => {
+      const nextDateKey = getSleepDateKey();
+      setSleepDateKey((prev) => (prev === nextDateKey ? prev : nextDateKey));
+    };
+
+    syncSleepDate();
+    const id = setInterval(syncSleepDate, 60000);
+    window.addEventListener("focus", syncSleepDate);
+
+    return () => {
+      clearInterval(id);
+      window.removeEventListener("focus", syncSleepDate);
     };
   }, []);
 
   useEffect(() => {
-    if (tab === 'schedule') fetchSmartSchedule();
-    if (tab === 'analytics') fetchAnalytics();
-    if (tab === 'profile') fetchProfile();
-  }, [tab]);
+    const entry = readSleepEntry(sleepDateKey);
+    setDailySleepMinutes(entry.totalMinutes);
+    setInitialSleepMinutes(entry.initialMinutes);
+    setAdditionalSleepMinutes(entry.additionalMinutes);
+    setShowInitialSleepPrompt(!entry.initialLogged);
+    setSleepError("");
+    setInitialSleepInput({ hours: "", minutes: "" });
+    setSleepInput({ hours: "", minutes: "" });
+  }, [sleepDateKey]);
 
-  async function runPredict() {
-    setLoading(true);
-    setError('');
-    try {
-      const body = {
-        ...profile,
-        part_time_job: profile.part_time_job === 1 ? 'Yes' : 'No',
-      };
-      const data = await fetchJson('/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      setResult(data);
-      if (data?.streak_info) setStreak(data.streak_info);
-      await Promise.all([fetchTasks(), fetchAnalytics(), fetchDistraction()]);
-    } catch (err) {
-      setError(err.message || 'Planner prediction failed');
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    setSocialStorageLoaded(false);
+    const entry = readSocialEntry(sleepDateKey);
+    setSocialSeconds(entry.totalSeconds);
+    setSocialTimerRunning(entry.isRunning);
+    setSocialTimerStartedAt(entry.startedAt);
+    setSocialTimerTick(0);
+    setSocialStorageLoaded(true);
+  }, [sleepDateKey]);
+
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      sleep_hours: Number((dailySleepMinutes / 60).toFixed(2)),
+    }));
+  }, [dailySleepMinutes]);
+
+  useEffect(() => {
+    if (!socialTimerRunning || !socialTimerStartedAt) return;
+
+    const id = setInterval(() => {
+      setSocialTimerTick((prev) => prev + 1);
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [socialTimerRunning, socialTimerStartedAt]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!socialStorageLoaded) return;
+
+    writeSocialEntry(
+      sleepDateKey,
+      socialSeconds,
+      socialTimerRunning,
+      socialTimerRunning ? socialTimerStartedAt : null,
+    );
+  }, [sleepDateKey, socialSeconds, socialStorageLoaded, socialTimerRunning, socialTimerStartedAt]);
+
+  useEffect(() => {
+    if (Date.now() < notificationsMutedUntil) return;
+    if (startReminderTask) return;
+
+    const now = Date.now();
+    const dueTasks = tasks
+      .filter((t) => {
+        const pendingLike = t.status === "pending" || t.status === "rescheduled";
+        if (!pendingLike || !t.planned_start) return false;
+
+        const startTs = new Date(t.planned_start).getTime();
+        if (Number.isNaN(startTs) || now < startTs) return false;
+
+        if (t.planned_end) {
+          const endTs = new Date(t.planned_end).getTime();
+          if (!Number.isNaN(endTs) && now >= endTs) return false;
+        }
+
+        const coolDownUntil = startReminderCooldown[t.id] || 0;
+        return now >= coolDownUntil;
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.planned_start).getTime() - new Date(b.planned_start).getTime(),
+      );
+
+    if (dueTasks.length > 0) {
+      const nextTask = dueTasks[0];
+      setStartReminderTask(nextTask);
+      setStartReminderCooldown((prev) => ({
+        ...prev,
+        [nextTask.id]: Date.now() + 60 * 1000,
+      }));
     }
-  }
+  }, [tasks, startReminderTask, startReminderCooldown, notificationsMutedUntil]);
 
-  async function runContentCheck() {
-    setContentLoading(true);
-    setError('');
-    try {
-      const data = await fetchJson('/content-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(contentDraft),
-      });
-      setContentResult(data);
-      await fetchAnalytics();
-    } catch (err) {
-      setError(err.message || 'Content check failed');
-    } finally {
-      setContentLoading(false);
+  useEffect(() => {
+    if (Date.now() < notificationsMutedUntil) {
+      setStartReminderTask(null);
+      return;
     }
-  }
+    if (!startReminderTask) return;
+    const latestTask = tasks.find((t) => String(t.id) === String(startReminderTask.id));
+    if (!latestTask) {
+      setStartReminderTask(null);
+      return;
+    }
+    if (latestTask.status !== "pending" && latestTask.status !== "rescheduled") {
+      setStartReminderTask(null);
+      return;
+    }
+    setStartReminderTask(latestTask);
+  }, [tasks, startReminderTask, notificationsMutedUntil]);
 
-  async function addTask() {
-    if (!newTask.subject.trim()) return;
+  useEffect(() => {
+    if (!startReminderTask || shortBreakActive) return;
+
+    const reminderKey = `${startReminderTask.id}:${startReminderTask.scheduled_slot || "planned"}`;
+    if (lastStartReminderNotificationRef.current === reminderKey) return;
+
+    lastStartReminderNotificationRef.current = reminderKey;
+    showBrowserNotification({
+      title: "Study task reminder",
+      body: `It's time to start "${startReminderTask.subject}"${startReminderTask.scheduled_slot ? ` at ${startReminderTask.scheduled_slot}` : ""}.`,
+      tag: `planner-start-${startReminderTask.id}`,
+    });
+  }, [shortBreakActive, showBrowserNotification, startReminderTask]);
+
+  useEffect(() => {
+    if (!rescheduleAlert || shortBreakActive) return;
+
+    const rescheduleKey = `${rescheduleAlert.task_subject}:${rescheduleAlert.new_slot}`;
+    if (lastRescheduleNotificationRef.current === rescheduleKey) return;
+
+    lastRescheduleNotificationRef.current = rescheduleKey;
+    showBrowserNotification({
+      title: "Task rescheduled",
+      body: `"${rescheduleAlert.task_subject}" moved to ${rescheduleAlert.new_slot}.`,
+      tag: `planner-reschedule-${rescheduleAlert.task_subject}`,
+    });
+  }, [rescheduleAlert, shortBreakActive, showBrowserNotification]);
+
+  useEffect(() => {
+    if (!shortBreakEndAt) return;
+    const tick = () => {
+      const remain = Math.max(0, Math.ceil((shortBreakEndAt - Date.now()) / 1000));
+      setShortBreakRemainingSeconds(remain);
+      if (remain <= 0) setShortBreakEndAt(null);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [shortBreakEndAt]);
+
+  useEffect(() => {
+    if (!shortBreakActive) return;
+    const id = setInterval(() => {
+      setBreakMotivationIndex((prev) => (prev + 1) % 5);
+    }, 8000);
+    return () => clearInterval(id);
+  }, [shortBreakActive]);
+
+  // Creates a new planner task after validating the requested start time.
+  const handleAddTask = async () => {
+    if (
+      !newTask.subject.trim() ||
+      !newTask.start_hour ||
+      !newTask.start_minute ||
+      !newTask.start_meridiem
+    ) {
+      alert("Please enter subject and start time.");
+      return;
+    }
+  
     try {
-      await fetchJson('/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newTask),
+      const slotInfo = calculateTimeSlot(newTask);
+      const newTaskStartTime = new Date(slotInfo.planned_start).getTime();
+      const existingTaskAtSameTime = tasks.find((task) => {
+        const taskStartTime = getTaskStartTime(task);
+        return (
+          taskStartTime !== Number.MAX_SAFE_INTEGER &&
+          taskStartTime === newTaskStartTime
+        );
       });
+
+      if (existingTaskAtSameTime) {
+        alert("You already have a task at that time.");
+        return;
+      }
+  
+      const res = await fetch("/api/planner/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...newTask,
+          scheduled_slot: slotInfo.scheduled_slot,
+          planned_start: slotInfo.planned_start,
+          planned_end: slotInfo.planned_end,
+        }),
+      });
+  
+      if (!res.ok) {
+        let errMessage = "Failed to add task.";
+        try {
+          const errData = await res.json();
+          errMessage = errData.error || errMessage;
+        } catch (_) {
+          const errText = await res.text();
+          console.error("Add task failed:", errText);
+        }
+        alert(errMessage);
+        return;
+      }
+  
+      await res.json();
+  
       setNewTask({
-        subject: '',
-        duration_minutes: 45,
-        priority: 'medium',
-        scheduled_slot: '09:00',
-        notes: '',
+        subject: "",
+        duration_minutes: 60,
+        priority: "medium",
+        scheduled_slot: "",
+        start_hour: "12",
+        start_minute: "00",
+        start_meridiem: "AM",
+        notes: "",
       });
+      console.log("SENDING TASK:", {
+        ...newTask,
+        planned_start: slotInfo.planned_start,
+        planned_end: slotInfo.planned_end,
+      });
+  
       setShowAddTask(false);
-      await Promise.all([fetchTasks(), fetchProfile(), fetchAnalytics(), fetchSmartSchedule()]);
-    } catch {}
-  }
+      fetchTasks();
+    } catch (err) {
+      console.error("Add task error:", err);
+    }
+  };
 
-  async function taskAction(id, action) {
+  // Starts the task that was surfaced by the reminder popup.
+  const handleStartReminderStart = async () => {
+    if (!startReminderTask) return;
+    await handleStartTimer(startReminderTask);
+    setStartReminderTask(null);
+  };
+
+  // Defers the start reminder for a short cooldown period.
+  const handleStartReminderLater = () => {
+    if (!startReminderTask) return;
+    setStartReminderCooldown((prev) => ({
+      ...prev,
+      [startReminderTask.id]: Date.now() + 2 * 60 * 1000,
+    }));
+    setStartReminderTask(null);
+  };
+
+  // Starts a break timer that temporarily mutes planner alerts.
+  const startShortBreak = () => {
+    const mins = Number(breakMinutesInput);
+    const clamped = Math.max(1, Math.min(59, Math.floor(mins || 0)));
+    const endAt = Date.now() + clamped * 60 * 1000;
+    setShortBreakEndAt(endAt);
+    setShortBreakRemainingSeconds(clamped * 60);
+    setShowBreakDurationPicker(false);
+  };
+
+  // Pre-fills the add-task form with a quick short study session.
+  const handleAddSmallTask = () => {
+    const now = new Date();
+    const hr = now.getHours();
+    const min = now.getMinutes();
+    const roundedMin = Math.ceil(min / 15) * 15;
+    const normalizedDate = new Date(now);
+    normalizedDate.setMinutes(roundedMin === 60 ? 0 : roundedMin, 0, 0);
+    if (roundedMin === 60) normalizedDate.setHours(hr + 1);
+
+    const hour24 = normalizedDate.getHours();
+    const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+    const minute = String(normalizedDate.getMinutes()).padStart(2, "0");
+    const meridiem = hour24 >= 12 ? "PM" : "AM";
+
+    setNewTask((prev) => ({
+      ...prev,
+      subject: prev.subject || "Quick revision",
+      duration_minutes: 15,
+      priority: "low",
+      start_hour: String(hour12),
+      start_minute: minute,
+      start_meridiem: meridiem,
+    }));
+    setShowAddTask(true);
+    setFeedbackRecoveryOpen(false);
+    setShowBreakDurationPicker(false);
+  };
+
+  const breakMotivationMessages = [
+    "Take your rest. You have earned this pause.",
+    "Breathe in, breathe out. You are doing great.",
+    "Reset your mind now. Your next focus block will be stronger.",
+    "Small breaks build big consistency. Keep going.",
+    "Relax for a moment. Progress is still progress.",
+  ];
+
+  // Saves the first sleep entry that unlocks prediction for the day.
+  const handleInitialSleepSubmit = () => {
+    const minutes = getSleepInputMinutes(initialSleepInput);
+
+    if (minutes == null) {
+      setSleepError("Enter valid sleep hours and minutes.");
+      return;
+    }
+
+    if (minutes > 24 * 60) {
+      setSleepError("Sleep time cannot be more than 24 hours.");
+      return;
+    }
+
+    if (applySleepMinutes(minutes, { replace: true, requireInitial: true })) {
+      setInitialSleepInput({ hours: "", minutes: "" });
+    }
+  };
+
+  // Adds extra sleep time after the initial sleep entry has been recorded.
+  const handleSleepAdd = () => {
+    const minutes = getSleepInputMinutes(sleepInput);
+
+    if (minutes == null) {
+      setSleepError("Enter valid sleep hours and minutes.");
+      return;
+    }
+
+    if (minutes === 0) {
+      setSleepError("Add at least 1 minute of sleep.");
+      return;
+    }
+
+    if (applySleepMinutes(minutes)) {
+      setSleepInput({ hours: "", minutes: "" });
+    }
+  };
+
+  // Starts tracking the current social-media session from now.
+  const startSocialTimer = () => {
+    if (socialTimerRunning) return;
+
+    const startedAt = new Date().toISOString();
+    setSocialTimerRunning(true);
+    setSocialTimerStartedAt(startedAt);
+    setSocialTimerTick(0);
+    writeSocialEntry(sleepDateKey, socialSeconds, true, startedAt);
+  };
+  
+  // Deletes a selected task and refreshes the planner state.
+  const deleteTask = async (id) => {
     try {
-      await fetchJson(`/tasks/${id}/${action}`, { method: 'POST' });
-      await Promise.all([fetchTasks(), fetchAnalytics(), fetchProfile(), fetchDistraction(), fetchSmartSchedule()]);
-    } catch {}
-  }
+      const res = await fetch(`/api/planner/tasks/${id}`, {
+        method: "DELETE",
+      });
+  
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("Delete task failed:", errText);
+        return;
+      }
+  
+      await res.json();
+      fetchTasks();
+    } catch (error) {
+      console.error("Delete task error:", error);
+    }
+  };
 
-  async function removeTask(id) {
+  // Main prediction request: sends the latest student inputs + task schedule to the API.
+  const handlePredict = useCallback(async () => {
+    if (!canShowPrediction) {
+      setError(null);
+      return;
+    }
+
+    if (predictionInFlightRef.current) return;
+
+    predictionInFlightRef.current = true;
+    setError(null);
     try {
-      await fetchJson(`/tasks/${id}`, { method: 'DELETE' });
-      await Promise.all([fetchTasks(), fetchAnalytics(), fetchProfile(), fetchSmartSchedule()]);
-    } catch {}
-  }
+      const activeForm = latestFormRef.current || form;
+      const activeTasks = latestTasksRef.current || tasks;
+      const schedule = activeTasks.map((t) => ({
+        time: t.scheduled_slot || "",
+        status: t.status === "completed" ? "occupied" : "free",
+      }));
+      const res = await fetch("/api/planner/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...activeForm, schedule }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      latestPredictionRef.current = data;
+      if (!visiblePredictionRef.current) {
+        visiblePredictionRef.current = data;
+        setResult(data);
+      }
+      if (data.task_stats) setTaskStats(data.task_stats);
+      if (data.streak_info) setStreakInfo(data.streak_info);
+    } catch (err) {
+      setError(err.message || "Prediction failed");
+    } finally {
+      predictionInFlightRef.current = false;
+    }
+  }, [canShowPrediction]);
 
-  const profileSummary = profilerData || analytics?.productivity_profile || {};
-  const weekly = analytics?.trend_analytics?.weekly_summary || {};
-  const studyVsDistraction = analytics?.trend_analytics?.study_vs_distraction || {};
-  const daily = analytics?.trend_analytics?.daily_trends || [];
-  const patterns = analytics?.trend_analytics?.patterns || {};
-  const suggestions = analytics?.trend_analytics?.suggestions || [];
-  const recommendations = smartSchedule?.recommendations || [];
-  const bestHours = profileSummary.best_hours || [];
-  const worstHours = profileSummary.worst_hours || [];
-  const bestDays = profileSummary.best_days || [];
-  const subjects = profileSummary.subject_performance || [];
-  const live = distraction?.distraction_state;
-  const activeTask = distraction?.active_task ? normalizeTask(distraction.active_task) : tasks.find((task) => task.status === 'active');
-  const trend = trendMeta(weekly.trend_direction);
-  const TrendIcon = trend.icon;
-  const educationalRatio = studyVsDistraction.educational_content_ratio ?? weekly.educational_ratio ?? 0;
-  const focusProbability = Math.round(
-    (result?.task_completion_probability ?? (taskStats.completion_rate || 0) / 100) * 100,
-  );
+ 
 
+  // Filters and sorts tasks for the currently selected planner tab.
   const filteredTasks = useMemo(() => {
-    if (taskFilter === 'active') {
-      return tasks.filter((task) => ['pending', 'active', 'in_progress', 'rescheduled'].includes(task.status));
-    }
-    if (taskFilter === 'completed') {
-      return tasks.filter((task) => task.status === 'completed');
-    }
-    if (taskFilter === 'missed') {
-      return tasks.filter((task) => task.status === 'missed');
-    }
-    return tasks;
-  }, [taskFilter, tasks]);
+    let visibleTasks = tasks;
 
-  const chartData = daily.map((item) => ({
-    day: item.date?.slice(5) || '',
-    completion: item.completion_rate ?? 0,
-    study: item.study_minutes ?? 0,
-  }));
+    if (activeTab === "active")
+      visibleTasks = tasks.filter(
+        (t) =>
+          t.status === "active" ||
+          t.status === "pending" ||
+          t.status === "rescheduled",
+      );
+    if (activeTab === "completed")
+      visibleTasks = tasks.filter((t) => t.status === "completed");
+    if (activeTab === "missed")
+      visibleTasks = tasks.filter((t) => t.status === "missed");
 
-  const balanceData = [
-    {
-      name: 'Study',
-      value: studyVsDistraction.study_minutes ?? weekly.total_study_minutes ?? 0,
-      fill: '#5caaff',
-    },
-    {
-      name: 'Distract',
-      value: studyVsDistraction.distraction_minutes ?? weekly.total_distraction_minutes ?? 0,
-      fill: '#ff7f6b',
-    },
-  ];
+    return [...visibleTasks].sort(sortTasksByStartTime);
+  }, [tasks, activeTab]);
 
-  const subjectData = subjects.slice(0, 6).map((subject) => ({
-    subject: normalizeText(subject.subject, 'Untitled'),
-    completion: Math.round((subject.completion_rate || 0) * 100),
-  }));
+  const feedbackConf = {
+    recovery: { icon: Coffee, color: "#ef4444" },
+    missed_support: { icon: CalendarCheck, color: "#f59e0b" },
+    refocus: { icon: Brain, color: "#f59e0b" },
+    streak: { icon: Flame, color: "#10b981" },
+    praise: { icon: Trophy, color: "#10b981" },
+    encourage: { icon: TrendingUp, color: "#818cf8" },
+    distraction_warning: { icon: AlertCircle, color: "#ef4444" },
+    auto_reschedule: { icon: RefreshCw, color: "#a855f7" },
+  };
 
-  const contentState = contentResult?.classification;
-  const contentContext = contentResult?.planner_context;
-  const contentTone = contentState?.result === 'allow'
-    ? { color: '#3ddc97', background: 'rgba(61,220,151,0.14)', label: 'Educational' }
-    : contentState?.result === 'block'
-      ? { color: '#ff7f6b', background: 'rgba(255,127,107,0.14)', label: 'Non-educational' }
-      : { color: '#ffcf66', background: 'rgba(255,207,102,0.14)', label: 'Pending' };
+  const completedCount = taskStats?.completed || 0;
+  const totalCount = taskStats?.total || tasks.length || 0;
+  const currentStreak = streakInfo?.current_streak || 0;
+  const focusRate = streakInfo ? Math.round(streakInfo.focus_rate || 0) : null;
+  const activeCount = tasks.filter((t) => t.status === "active").length;
+  const pendingCount = tasks.filter(
+    (t) => t.status === "pending" || t.status === "rescheduled",
+  ).length;
+  const dailySleepLabel = formatSleepDuration(dailySleepMinutes);
+  const initialSleepLabel = formatSleepDuration(initialSleepMinutes);
+  const additionalSleepLabel = formatSleepDuration(additionalSleepMinutes);
+  const liveSocialSeconds =
+    socialSeconds + (socialTimerRunning ? getCurrentSocialSessionSeconds() : 0);
+  const dailySocialLabel = formatHoursMinutesFromSeconds(liveSocialSeconds);
+  const liveSocialTimerLabel = formatClockDuration(liveSocialSeconds);
+  const socialLimitExceeded = liveSocialSeconds >= 2 * 3600;
+  const todayStudySeconds =
+    persistedTodayStudySeconds + (isRunning && activeTaskId ? getCurrentSessionElapsedSeconds() : 0);
+  const todayStudyLabel = formatStudyDuration(todayStudySeconds);
+  const statusTone = distractionState?.is_distracted ? "#ef4444" : "#10b981";
+  const statusLabel = distractionState
+    ? distractionState.is_distracted
+      ? `Distracted ${Math.round((distractionState.confidence || 0) * 100)}%`
+      : "Focused"
+    : "Monitoring";
 
-  const tabs = [
-    { key: 'overview', label: 'Command Center', icon: Brain },
-    { key: 'schedule', label: 'Smart Schedule', icon: WandSparkles },
-    { key: 'analytics', label: 'Trend Analytics', icon: BarChart3 },
-    { key: 'profile', label: 'Profile', icon: UserRound },
-  ];
+  useEffect(() => {
+    latestFormRef.current = form;
+  }, [form]);
 
-  const scheduleReady = capabilities.schedule && recommendations.length > 0;
-  const profileReady = capabilities.profile && (!!profilerData || !!analytics?.productivity_profile);
+  useEffect(() => {
+    latestTasksRef.current = tasks;
+  }, [tasks]);
 
-  const overviewTab = (
-    <div className="space-y-6">
-      <Panel
-        title="Overview"
-        eyebrow="Planner"
-        action={(
-          <div className="flex flex-wrap gap-3">
-            <PlannerButton icon={Brain} onClick={runPredict} disabled={loading}>
-              {loading ? 'Running...' : 'Run prediction'}
-            </PlannerButton>
-            <PlannerButton icon={WandSparkles} variant="ghost" onClick={() => { setTab('schedule'); fetchSmartSchedule(); }}>
-              Smart schedule
-            </PlannerButton>
-            <PlannerButton icon={RefreshCw} variant="ghost" onClick={refreshAll}>
-              Refresh
-            </PlannerButton>
-          </div>
-        )}
-      >
-        <div className="grid gap-4 lg:grid-cols-3">
-          <MetricBlock
-            icon={Target}
-            label="Completion outlook"
-            value={`${focusProbability}%`}
-            helper={result?.planner_decision || 'Awaiting prediction'}
-            color="#ffb066"
-          />
-          <MetricBlock
-            icon={TrendIcon}
-            label="Weekly direction"
-            value={trend.label}
-            helper={weekly.trend_delta !== undefined ? `${weekly.trend_delta > 0 ? '+' : ''}${weekly.trend_delta}% vs prior` : 'Not enough history'}
-            color={trend.color}
-          />
-          <MetricBlock
-            icon={Clock3}
-            label="Best slot"
-            value={bestHours[0]?.label || '--'}
-            helper={bestHours[0] ? `${Math.round(bestHours[0].rate * 100)}% completion` : 'No ranked hours yet'}
-            color="#5caaff"
-          />
-        </div>
-        {error ? (
-          <div
-            className="mt-4 rounded-[20px] px-4 py-3 text-sm"
-            style={{ background: 'rgba(255,127,107,0.12)', border: '1px solid rgba(255,127,107,0.18)', color: '#ffb9ad' }}
-          >
-            {error}
-          </div>
-        ) : null}
-      </Panel>
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      total_social_hours: Number((liveSocialSeconds / 3600).toFixed(2)),
+    }));
+  }, [liveSocialSeconds]);
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Panel
-          title="Task queue"
-          eyebrow="Execution"
-          action={(
-            <div className="flex flex-wrap gap-2">
-              {['all', 'active', 'completed', 'missed'].map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setTaskFilter(key)}
-                  className="rounded-full px-3 py-1.5 text-xs font-semibold capitalize"
-                  style={{
-                    background: taskFilter === key ? 'rgba(255,176,102,0.18)' : 'rgba(255,255,255,0.04)',
-                    color: taskFilter === key ? '#ffcf66' : 'rgba(207,216,236,0.74)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                  }}
-                >
-                  {key}
-                </button>
-              ))}
-            </div>
-          )}
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      study_hours_per_day: Number((todayStudySeconds / 3600).toFixed(2)),
+    }));
+  }, [todayStudySeconds]);
+
+  useEffect(() => {
+    if (canShowPrediction) return;
+
+    visiblePredictionRef.current = null;
+    setResult(null);
+    setError(null);
+  }, [canShowPrediction]);
+
+  // Runs a prediction immediately when the page state changes enough to rebuild the callback.
+  useEffect(() => {
+    handlePredict();
+  }, [handlePredict]);
+
+  // Polls the backend regularly so the prediction can update during the demo.
+  useEffect(() => {
+    const id = setInterval(() => {
+      handlePredict();
+    }, 3000);
+
+    return () => clearInterval(id);
+  }, [handlePredict]);
+
+  // Applies the newest prediction payload to the visible score card on its own cadence.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!canShowPrediction) return;
+      if (!latestPredictionRef.current) return;
+      if (latestPredictionRef.current === visiblePredictionRef.current) return;
+      visiblePredictionRef.current = latestPredictionRef.current;
+      setResult(latestPredictionRef.current);
+    }, 4000);
+
+    return () => clearInterval(id);
+  }, [canShowPrediction]);
+
+  return (
+    <div
+      className="flex min-h-screen"
+      style={{
+        background: dark
+          ? "radial-gradient(circle at top left, rgba(99,102,241,0.12), transparent 22%), radial-gradient(circle at top right, rgba(16,185,129,0.08), transparent 20%), var(--bg-primary)"
+          : "radial-gradient(circle at top left, rgba(99,102,241,0.08), transparent 22%), radial-gradient(circle at top right, rgba(16,185,129,0.05), transparent 20%), var(--bg-primary)",
+      }}
+    >
+      <Sidebar active="Planner" />
+
+      <main className="flex-1 flex flex-col min-h-screen overflow-y-auto">
+        <header
+          className="sticky top-0 z-30 px-6 lg:px-8 py-4"
+          style={{
+            background: dark ? "rgba(8,10,18,0.78)" : "rgba(252,252,254,0.82)",
+            backdropFilter: "blur(24px)",
+            borderBottom: "1px solid rgba(255,255,255,0.06)",
+          }}
         >
-          <div className="grid gap-4 md:grid-cols-4">
-            <MetricBlock icon={Layers3} label="Tasks" value={taskStats.total ?? tasks.length} color="#9ec9ff" />
-            <MetricBlock icon={CheckCircle2} label="Completion" value={`${taskStats.completion_rate ?? 0}%`} color="#3ddc97" />
-            <MetricBlock icon={Flame} label="Streak" value={streak.focus_streak ?? 0} color="#ffb066" />
-            <MetricBlock icon={TimerReset} label="Study" value={`${((weekly.total_study_minutes || 0) / 60).toFixed(1)}h`} color="#c79cff" />
-          </div>
-
-          <div
-            className="mt-6 rounded-[24px] p-4"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Quick add</div>
-                <div className="mt-1 text-xs" style={{ color: 'rgba(207,216,236,0.6)' }}>
-                  Add the task now. Optimize the slot later.
-                </div>
-              </div>
-              <PlannerButton variant={showAddTask ? 'subtle' : 'ghost'} icon={Plus} onClick={() => setShowAddTask((value) => !value)}>
-                {showAddTask ? 'Hide' : 'Add task'}
-              </PlannerButton>
-            </div>
-
-            {showAddTask ? (
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
-                <input
-                  className="rounded-2xl px-4 py-3 text-sm outline-none"
-                  style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                  placeholder="Subject"
-                  value={newTask.subject}
-                  onChange={(event) => setNewTask((current) => ({ ...current, subject: event.target.value }))}
-                />
-                <select
-                  className="rounded-2xl px-4 py-3 text-sm outline-none"
-                  style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                  value={newTask.priority}
-                  onChange={(event) => setNewTask((current) => ({ ...current, priority: event.target.value }))}
-                >
-                  <option value="high">High priority</option>
-                  <option value="medium">Medium priority</option>
-                  <option value="low">Low priority</option>
-                </select>
-                <input
-                  type="number"
-                  min={15}
-                  step={15}
-                  className="rounded-2xl px-4 py-3 text-sm outline-none"
-                  style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                  value={newTask.duration_minutes}
-                  onChange={(event) => setNewTask((current) => ({ ...current, duration_minutes: Number(event.target.value) }))}
-                />
-                <select
-                  className="rounded-2xl px-4 py-3 text-sm outline-none"
-                  style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                  value={newTask.scheduled_slot}
-                  onChange={(event) => setNewTask((current) => ({ ...current, scheduled_slot: event.target.value }))}
-                >
-                  {TIME_SLOTS.map((slot) => (
-                    <option key={slot} value={slot}>
-                      {slot}
-                    </option>
-                  ))}
-                </select>
-                <textarea
-                  rows={3}
-                  className="rounded-2xl px-4 py-3 text-sm outline-none md:col-span-2"
-                  style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                  placeholder="Notes"
-                  value={newTask.notes}
-                  onChange={(event) => setNewTask((current) => ({ ...current, notes: event.target.value }))}
-                />
-                <PlannerButton icon={Plus} onClick={addTask}>Save task</PlannerButton>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="mt-6 space-y-3">
-            {filteredTasks.length ? (
-              filteredTasks.map((task) => {
-                const status = task.status || 'pending';
-                const priority = task.priority || 'medium';
-                const priorityColor = priority === 'high' ? '#ff7f6b' : priority === 'low' ? '#3ddc97' : '#ffcf66';
-                const priorityBackground = priority === 'high'
-                  ? 'rgba(255,127,107,0.14)'
-                  : priority === 'low'
-                    ? 'rgba(61,220,151,0.14)'
-                    : 'rgba(255,207,102,0.14)';
-                const statusColor = status === 'completed'
-                  ? '#3ddc97'
-                  : status === 'missed'
-                    ? '#ff7f6b'
-                    : status === 'active' || status === 'in_progress'
-                      ? '#5caaff'
-                      : status === 'rescheduled'
-                        ? '#ffcf66'
-                        : '#d4d8e2';
-                const statusBackground = status === 'completed'
-                  ? 'rgba(61,220,151,0.14)'
-                  : status === 'missed'
-                    ? 'rgba(255,127,107,0.14)'
-                    : status === 'active' || status === 'in_progress'
-                      ? 'rgba(92,170,255,0.14)'
-                      : status === 'rescheduled'
-                        ? 'rgba(255,207,102,0.14)'
-                        : 'rgba(255,255,255,0.08)';
-
-                return (
-                  <div
-                    key={task.id}
-                    className="grid gap-4 rounded-[24px] p-4 lg:grid-cols-[1fr_auto]"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                  >
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-xl font-semibold text-white">{task.subject}</div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" style={{ color: 'rgba(207,216,236,0.62)' }}>
-                            <span>{task.duration_minutes} min</span>
-                            <span>·</span>
-                            <span>{task.scheduled_slot || 'No slot'}</span>
-                            {task.focus_score !== undefined ? (
-                              <>
-                                <span>·</span>
-                                <span>Focus {Math.round((task.focus_score || 0) * 100)}%</span>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <TaskPill color={priorityColor} background={priorityBackground}>{priority}</TaskPill>
-                          <TaskPill color={statusColor} background={statusBackground}>{status}</TaskPill>
-                        </div>
-                      </div>
-
-                      {task.notes ? (
-                        <div className="text-sm" style={{ color: 'rgba(207,216,236,0.74)' }}>
-                          {task.notes}
-                        </div>
-                      ) : null}
-
-                      {task.reschedule_reason ? (
-                        <div
-                          className="inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs"
-                          style={{ background: 'rgba(255,207,102,0.12)', color: '#ffcf66' }}
-                        >
-                          <AlertTriangle size={14} />
-                          Rescheduled: {task.reschedule_reason}
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="flex items-center lg:justify-end">
-                      <div className="flex flex-wrap gap-2">
-                        {['pending', 'rescheduled'].includes(status) ? (
-                          <PlannerButton variant="ghost" icon={ArrowRight} onClick={() => taskAction(task.id, 'start')}>
-                            Start
-                          </PlannerButton>
-                        ) : null}
-                        {['active', 'in_progress'].includes(status) ? (
-                          <PlannerButton variant="subtle" icon={CheckCircle2} onClick={() => taskAction(task.id, 'complete')}>
-                            Complete
-                          </PlannerButton>
-                        ) : null}
-                        {status !== 'completed' ? (
-                          <PlannerButton variant="ghost" icon={XCircle} onClick={() => taskAction(task.id, 'miss')}>
-                            Miss
-                          </PlannerButton>
-                        ) : null}
-                        <PlannerButton variant="ghost" icon={Trash2} onClick={() => removeTask(task.id)}>
-                          Remove
-                        </PlannerButton>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <EmptyState icon={Layers3} title="No tasks in this view" body="Add work or change the filter." />
-            )}
-          </div>
-        </Panel>
-
-        <div className="space-y-6">
-          <Panel title="Live signals" eyebrow="Decision rail">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <MetricBlock
-                icon={Activity}
-                label="Focus state"
-                value={live ? (live.is_distracted ? 'Distracted' : 'Focused') : 'Offline'}
-                helper={live ? `${Math.round((live.confidence || 0) * 100)}% confidence · ${normalizeText(live.dominant_app, 'unknown app')}` : 'Start the agent to stream focus data'}
-                color={live?.is_distracted ? '#ff7f6b' : '#3ddc97'}
-              />
-              <MetricBlock
-                icon={Clock3}
-                label="Current task"
-                value={activeTask?.subject || 'No active task'}
-                helper={activeTask ? `${activeTask.scheduled_slot || '--'} · ${activeTask.duration_minutes} min` : 'Start a task to attach live context'}
-                color="#5caaff"
-              />
+          <div className="flex items-center justify-between max-w-[1440px] mx-auto gap-4">
+            <div>
+              <p
+                className="text-[10px] uppercase tracking-[0.3em] font-semibold mb-1"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Smart Planning
+              </p>
+              <h1
+                className="text-[28px] font-black tracking-tight"
+                style={{ color: "var(--text-primary)" }}
+              >
+                Planner
+              </h1>
+              <p
+                className="text-[12px] mt-1"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {new Date().toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
             </div>
 
             <div
-              className="mt-4 rounded-[24px] p-4"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
+              className="hidden md:flex flex-col items-center justify-center px-5 py-2.5 rounded-[22px] min-w-[180px]"
+              style={{
+                background: dark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.72)",
+                border: "1px solid rgba(129,140,248,0.14)",
+                boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+              }}
             >
-              {result ? (
-                <div className="space-y-4">
-                  <div className="text-2xl font-semibold text-white">{result.planner_decision}</div>
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'rgba(207,216,236,0.52)' }}>
-                        Final probability
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-white">{focusProbability}%</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'rgba(207,216,236,0.52)' }}>
-                        Distraction adjust
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-white">{result.distraction_adjustment ?? 0}</div>
-                    </div>
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'rgba(207,216,236,0.52)' }}>
-                        Content adjust
-                      </div>
-                      <div className="mt-1 text-lg font-semibold text-white">{result.content_adjustment ?? 0}</div>
-                    </div>
-                  </div>
-
-                  {result.feedback ? (
-                    <div
-                      className="rounded-2xl px-4 py-3"
-                      style={{ background: 'rgba(255,176,102,0.08)', border: '1px solid rgba(255,176,102,0.16)' }}
-                    >
-                      <div className="text-sm text-white">{textOf(result.feedback)}</div>
-                      {result.feedback.trend_supplement ? (
-                        <div className="mt-1 text-xs" style={{ color: 'rgba(255,207,102,0.82)' }}>
-                          {result.feedback.trend_supplement}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="text-sm" style={{ color: 'rgba(207,216,236,0.64)' }}>
-                  Run a prediction to get the next planner decision.
-                </div>
-              )}
-            </div>
-          </Panel>
-
-          <Panel title="Content check" eyebrow="Browser">
-            <div className="space-y-3">
-              <input
-                className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                placeholder="Page title"
-                value={contentDraft.title}
-                onChange={(event) => setContentDraft((current) => ({ ...current, title: event.target.value }))}
-              />
-              <input
-                className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                placeholder="Page URL"
-                value={contentDraft.url}
-                onChange={(event) => setContentDraft((current) => ({ ...current, url: event.target.value }))}
-              />
-              <textarea
-                rows={5}
-                className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
-                style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                placeholder="Visible page content"
-                value={contentDraft.content}
-                onChange={(event) => setContentDraft((current) => ({ ...current, content: event.target.value }))}
-              />
-              <PlannerButton icon={BookOpen} onClick={runContentCheck} disabled={contentLoading}>
-                {contentLoading ? 'Analyzing...' : 'Analyze content'}
-              </PlannerButton>
-            </div>
-
-            <div className="mt-5">
-              <div
-                className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold"
-                style={{ background: contentTone.background, color: contentTone.color }}
+              <p
+                className="text-[10px] uppercase tracking-[0.24em] font-semibold"
+                style={{ color: "var(--text-muted)" }}
               >
-                <BookOpen size={14} />
-                {contentTone.label}
-              </div>
-
-              {contentState ? (
-                <div className="mt-4 space-y-2 text-sm" style={{ color: 'rgba(207,216,236,0.72)' }}>
-                  <div>Label: <span className="font-semibold text-white">{normalizeText(contentState.label, 'unknown')}</span></div>
-                  <div>Decision: <span className="font-semibold text-white">{normalizeText(contentState.result, '--')}</span></div>
-                  {contentContext?.content_warning ? (
-                    <div style={{ color: '#ffb2a6' }}>{contentContext.content_warning}</div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="mt-4 text-sm" style={{ color: 'rgba(207,216,236,0.62)' }}>
-                  Save a content signal for the next prediction.
-                </div>
-              )}
+                Current time
+              </p>
+              <p
+                className="text-[20px] font-black tracking-tight"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {currentTime.toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}
+              </p>
             </div>
-          </Panel>
-        </div>
-      </div>
-    </div>
-  );
 
-  const scheduleTab = (
-    <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-      <Panel
-        title="Smart schedule"
-        eyebrow="Recommendations"
-        action={(
-          <PlannerButton icon={RefreshCw} variant="ghost" onClick={fetchSmartSchedule} disabled={scheduleLoading}>
-            Refresh
-          </PlannerButton>
-        )}
-      >
-        {scheduleLoading ? (
-          <div className="flex items-center gap-3 rounded-[24px] px-5 py-6 text-sm" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(207,216,236,0.68)' }}>
-            <RefreshCw size={18} className="animate-spin" />
-            Building recommendations
-          </div>
-        ) : !capabilities.schedule ? (
-          <EmptyState icon={WandSparkles} title="Smart schedule unavailable" body="Restart the desktop agent to enable schedule recommendations." />
-        ) : scheduleReady ? (
-          <div className="space-y-3">
-            {recommendations.map((item) => (
+            <div className="flex items-center gap-2.5 flex-wrap justify-end">
               <div
-                key={item.task_id}
-                className="grid gap-4 rounded-[24px] p-4 lg:grid-cols-[1fr_auto]"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-full"
                 style={{
-                  background: item.is_peak_hour ? 'rgba(255,176,102,0.08)' : 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(255,255,255,0.08)',
+                  background: `${statusTone}14`,
+                  color: statusTone,
+                  border: `1px solid ${statusTone}22`,
                 }}
               >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-lg font-semibold text-white">{normalizeText(item.subject, 'Untitled task')}</span>
-                    <TaskPill
-                      color={item.priority === 'high' ? '#ff7f6b' : item.priority === 'low' ? '#3ddc97' : '#ffcf66'}
-                      background={item.priority === 'high' ? 'rgba(255,127,107,0.14)' : item.priority === 'low' ? 'rgba(61,220,151,0.14)' : 'rgba(255,207,102,0.14)'}
-                    >
-                      {normalizeText(item.priority, 'medium')}
-                    </TaskPill>
-                    {item.is_peak_hour ? <TaskPill color="#ffcf66" background="rgba(255,176,102,0.16)">Peak</TaskPill> : null}
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center gap-3 text-sm" style={{ color: 'rgba(207,216,236,0.68)' }}>
-                    <span>Current: {normalizeText(item.current_slot, '--')}</span>
-                    <span>Recommended: {normalizeText(item.recommended_slot, '--')}</span>
-                    <span>{item.duration_minutes} min</span>
-                    {item.subject_completion_rate !== null && item.subject_completion_rate !== undefined ? (
-                      <span>{Math.round(item.subject_completion_rate * 100)}% subject completion</span>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 text-sm" style={{ color: 'rgba(247,248,251,0.84)' }}>
-                    {normalizeText(item.reason, 'No reason provided')}
-                  </div>
-                </div>
-                <div className="flex items-center text-2xl font-semibold text-white lg:justify-end">
-                  {normalizeText(item.recommended_slot, '--')}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState icon={WandSparkles} title="No recommendations yet" body="Add pending tasks to generate a schedule." />
-        )}
-      </Panel>
-      <div className="space-y-6">
-        <Panel title="Optimization inputs" eyebrow="Profile">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <MetricBlock
-              icon={Zap}
-              label="Mode"
-              value={smartSchedule?.profile_based ? 'Personalized' : 'Default'}
-              helper={smartSchedule?.generated_at || 'Generated on demand'}
-              color={smartSchedule?.profile_based ? '#3ddc97' : '#ffcf66'}
-            />
-            <MetricBlock
-              icon={CalendarDays}
-              label="Best day"
-              value={bestDays[0]?.day || '--'}
-              helper={bestDays[0] ? `${Math.round(bestDays[0].rate * 100)}% completion` : 'No ranked days yet'}
-              color="#5caaff"
-            />
-          </div>
-
-          <div className="mt-5 space-y-5">
-            <div>
-              <div className="mb-3 text-sm font-semibold text-white">Best hours</div>
-              {bestHours.length ? (
-                bestHours.map((hour) => (
-                  <div key={hour.hour} className="mb-3 flex items-center gap-3">
-                    <span className="w-14 text-sm font-semibold text-white">{hour.label}</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full rounded-full" style={{ width: `${hour.rate * 100}%`, background: '#ffb066' }} />
-                    </div>
-                    <span className="w-10 text-right text-xs" style={{ color: 'rgba(207,216,236,0.68)' }}>
-                      {Math.round(hour.rate * 100)}%
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm" style={{ color: 'rgba(207,216,236,0.62)' }}>
-                  No ranked hours yet.
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="mb-3 text-sm font-semibold text-white">Worst hours</div>
-              {worstHours.length ? (
-                worstHours.map((hour) => (
-                  <div key={hour.hour} className="mb-3 flex items-center gap-3">
-                    <span className="w-14 text-sm font-semibold text-white">{hour.label}</span>
-                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full rounded-full" style={{ width: `${hour.rate * 100}%`, background: '#ff7f6b' }} />
-                    </div>
-                    <span className="w-10 text-right text-xs" style={{ color: 'rgba(207,216,236,0.68)' }}>
-                      {Math.round(hour.rate * 100)}%
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div className="text-sm" style={{ color: 'rgba(207,216,236,0.62)' }}>
-                  No low-performance hours yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </Panel>
-
-        <Panel title="Subject history" eyebrow="Completion">
-          {subjectData.length ? (
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={subjectData} margin={{ top: 12, right: 12, bottom: 0, left: -22 }}>
-                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                  <XAxis dataKey="subject" tick={{ fill: '#aab4c7', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#aab4c7', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="completion" name="Completion %" radius={[10, 10, 0, 0]} fill="#5caaff" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <EmptyState icon={BookOpen} title="No subject history yet" body="Complete tasks to build subject-level performance." />
-          )}
-        </Panel>
-      </div>
-    </div>
-  );
-
-  const analyticsTab = (
-    <div className="space-y-6">
-      {!capabilities.analytics ? (
-        <EmptyState icon={BarChart3} title="Analytics unavailable" body="Restart the desktop agent to enable trend analytics." />
-      ) : (
-        <>
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            <MetricBlock
-              icon={CheckCircle2}
-              label="Weekly completion"
-              value={`${Math.round(weekly.overall_completion_rate || 0)}%`}
-              helper={`${weekly.total_tasks_completed ?? 0} completed / ${weekly.total_tasks ?? 0} total`}
-              color="#3ddc97"
-            />
-            <MetricBlock
-              icon={TimerReset}
-              label="Study volume"
-              value={`${weekly.total_study_hours ?? 0}h`}
-              helper={`${weekly.avg_daily_study_minutes ?? 0} min average / day`}
-              color="#5caaff"
-            />
-            <MetricBlock
-              icon={Activity}
-              label="Distraction minutes"
-              value={studyVsDistraction.distraction_minutes ?? weekly.total_distraction_minutes ?? 0}
-              helper={`${weekly.total_distraction_events ?? 0} recorded events`}
-              color="#ff7f6b"
-            />
-            <MetricBlock
-              icon={BookOpen}
-              label="Educational ratio"
-              value={`${Math.round(educationalRatio || 0)}%`}
-              helper="Educational share of tracked content"
-              color="#ffcf66"
-            />
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <Panel title="Completion and study trend" eyebrow="7-day view">
-              {chartData.length ? (
-                <div className="h-80">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ top: 10, right: 12, bottom: 0, left: -24 }}>
-                      <defs>
-                        <linearGradient id="plannerCompletion" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#5caaff" stopOpacity={0.42} />
-                          <stop offset="100%" stopColor="#5caaff" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                      <XAxis dataKey="day" tick={{ fill: '#aab4c7', fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fill: '#aab4c7', fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<ChartTooltip />} />
-                      <Area type="monotone" dataKey="completion" name="Completion %" stroke="#5caaff" fill="url(#plannerCompletion)" strokeWidth={2.5} />
-                      <Area type="monotone" dataKey="study" name="Study minutes" stroke="#ffb066" fill="rgba(0,0,0,0)" strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <EmptyState icon={BarChart3} title="No trend data yet" body="Trend data will appear after enough daily records." />
-              )}
-            </Panel>
-
-            <Panel title="Study vs distraction" eyebrow="Balance">
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={balanceData} margin={{ top: 10, right: 0, left: -30, bottom: 0 }}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fill: '#aab4c7', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: '#aab4c7', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<ChartTooltip />} />
-                    <Bar dataKey="value" name="Minutes" radius={[12, 12, 0, 0]}>
-                      {balanceData.map((item) => <Cell key={item.name} fill={item.fill} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </Panel>
-          </div>
-
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            <Panel title="Patterns" eyebrow="Detected">
-              <div className="grid gap-3">
-                {[
-                  { label: 'Best day', value: patterns.best_day || bestDays[0]?.day || '--' },
-                  { label: 'Worst day', value: patterns.worst_day || '--' },
-                  { label: 'Most distracted day', value: patterns.most_distracted_day || '--' },
-                  { label: 'Active day streak', value: patterns.active_day_streak ?? '--' },
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex items-center justify-between rounded-[22px] px-4 py-4"
-                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                  >
-                    <span className="text-sm" style={{ color: 'rgba(207,216,236,0.7)' }}>{item.label}</span>
-                    <span className="text-sm font-semibold text-white">{item.value}</span>
-                  </div>
-                ))}
-              </div>
-            </Panel>
-
-            <Panel title="Suggestions" eyebrow="Guidance">
-              {suggestions.length ? (
-                <div className="space-y-3">
-                  {suggestions.map((item, index) => (
-                    <div
-                      key={`${item.type || 'suggestion'}-${index}`}
-                      className="rounded-[24px] p-4"
-                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl" style={{ background: 'rgba(255,176,102,0.12)', color: '#ffcf66' }}>
-                          <Lightbulb size={18} />
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-sm font-semibold capitalize text-white">
-                            {item.type ? item.type.replace(/_/g, ' ') : `Suggestion ${index + 1}`}
-                          </div>
-                          <div className="mt-1 text-sm leading-6" style={{ color: 'rgba(207,216,236,0.74)' }}>
-                            {textOf(item)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <EmptyState icon={Lightbulb} title="No suggestions yet" body="Complete tasks and log more history to unlock guidance." />
-              )}
-            </Panel>
-          </div>
-        </>
-      )}
-    </div>
-  );
-
-  const profileTab = (
-    <div className="grid gap-6 xl:grid-cols-[0.84fr_1.16fr]">
-      <Panel title="Planner profile" eyebrow="Inputs">
-        <div className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm" style={{ color: 'rgba(207,216,236,0.72)' }}>
-              <div className="mb-2">Age</div>
-              <input
-                type="number"
-                min={16}
-                max={35}
-                className="w-full rounded-2xl px-4 py-3 outline-none"
-                style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                value={profile.age}
-                onChange={(event) => setProfile((current) => ({ ...current, age: Number(event.target.value) }))}
-              />
-            </label>
-
-            <label className="text-sm" style={{ color: 'rgba(207,216,236,0.72)' }}>
-              <div className="mb-2">Gender</div>
-              <select
-                className="w-full rounded-2xl px-4 py-3 outline-none"
-                style={{ background: 'rgba(8,11,18,0.86)', border: '1px solid rgba(255,255,255,0.08)', color: '#f7f8fb' }}
-                value={profile.gender}
-                onChange={(event) => setProfile((current) => ({ ...current, gender: event.target.value }))}
-              >
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
-              </select>
-            </label>
-          </div>
-
-          {[
-            { key: 'study_hours_per_day', label: 'Study hours', min: 0, max: 12 },
-            { key: 'sleep_hours', label: 'Sleep hours', min: 3, max: 12 },
-            { key: 'total_social_hours', label: 'Social hours', min: 0, max: 10 },
-          ].map((field) => (
-            <label key={field.key} className="block text-sm" style={{ color: 'rgba(207,216,236,0.72)' }}>
-              <div className="mb-2 flex items-center justify-between">
-                <span>{field.label}</span>
-                <span className="font-semibold text-white">{profile[field.key]}h</span>
-              </div>
-              <input
-                type="range"
-                min={field.min}
-                max={field.max}
-                value={profile[field.key]}
-                onChange={(event) => setProfile((current) => ({ ...current, [field.key]: Number(event.target.value) }))}
-                className="w-full accent-orange-400"
-              />
-            </label>
-          ))}
-
-          <div>
-            <div className="mb-2 text-sm" style={{ color: 'rgba(207,216,236,0.72)' }}>Part-time job</div>
-            <div className="flex gap-2">
-              {[
-                { label: 'Yes', value: 1 },
-                { label: 'No', value: 0 },
-              ].map((item) => (
-                <button
-                  key={item.label}
-                  onClick={() => setProfile((current) => ({ ...current, part_time_job: item.value }))}
-                  className="rounded-full px-4 py-2 text-sm font-semibold"
+                <div
+                  className="w-1.5 h-1.5 rounded-full"
                   style={{
-                    background: profile.part_time_job === item.value ? 'rgba(255,176,102,0.18)' : 'rgba(255,255,255,0.05)',
-                    color: profile.part_time_job === item.value ? '#ffcf66' : '#f7f8fb',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: statusTone,
+                    animation: "pulse 2s infinite",
+                  }}
+                />
+                <span className="text-[11px] font-semibold">{statusLabel}</span>
+              </div>
+              {currentStreak > 0 && (
+                <div
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full"
+                  style={{
+                    background: "rgba(245,158,11,0.08)",
+                    color: "#f59e0b",
+                    border: "1px solid rgba(245,158,11,0.14)",
                   }}
                 >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <PlannerButton icon={Brain} onClick={runPredict} disabled={loading}>
-            {loading ? 'Running...' : 'Run with current profile'}
-          </PlannerButton>
-        </div>
-      </Panel>
-
-      <div className="space-y-6">
-        <Panel title="Profiler summary" eyebrow="Performance">
-          {!capabilities.profile ? (
-            <EmptyState icon={UserRound} title="Profile summary unavailable" body="Restart the desktop agent to enable productivity profiling." />
-          ) : (
-            <div className="grid gap-4 md:grid-cols-3">
-              <MetricBlock
-                icon={Zap}
-                label="Best hour"
-                value={bestHours[0]?.label || '--'}
-                helper={bestHours[0] ? `${Math.round(bestHours[0].rate * 100)}% completion` : 'No history yet'}
-                color="#ffb066"
-              />
-              <MetricBlock
-                icon={CalendarDays}
-                label="Best day"
-                value={bestDays[0]?.day || '--'}
-                helper={bestDays[0] ? `${Math.round(bestDays[0].rate * 100)}% completion` : 'No history yet'}
-                color="#5caaff"
-              />
-              <MetricBlock
-                icon={BookOpen}
-                label="Tracked subjects"
-                value={subjects.length}
-                helper={`${profileSummary.total_data_points ?? 0} profile points`}
-                color="#3ddc97"
-              />
-            </div>
-          )}
-        </Panel>
-
-        <Panel title="Subject performance" eyebrow="History">
-          {profileReady && subjects.length ? (
-            <div className="grid gap-3">
-              {subjects.map((subject) => (
-                <div
-                  key={subject.subject}
-                  className="flex flex-col gap-3 rounded-[24px] p-4 md:flex-row md:items-center md:justify-between"
-                  style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}
-                >
-                  <div>
-                    <div className="text-base font-semibold text-white">{normalizeText(subject.subject, 'Untitled')}</div>
-                    <div className="mt-1 text-sm" style={{ color: 'rgba(207,216,236,0.68)' }}>
-                      {subject.total_tasks} tasks · {subject.avg_duration_minutes} min average
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="h-2 w-28 overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${(subject.completion_rate || 0) * 100}%`,
-                          background: subject.completion_rate >= 0.7 ? '#3ddc97' : subject.completion_rate >= 0.5 ? '#ffcf66' : '#ff7f6b',
-                        }}
-                      />
-                    </div>
-                    <div className="text-lg font-semibold text-white">
-                      {Math.round((subject.completion_rate || 0) * 100)}%
-                    </div>
-                  </div>
+                  <Flame className="w-3 h-3" />
+                  <span className="text-[11px] font-semibold">
+                    {currentStreak} day streak
+                  </span>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <EmptyState icon={BookOpen} title="No subject performance yet" body="Complete tasks to build subject-level results." />
-          )}
-        </Panel>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="flex min-h-screen" style={shell}>
-      <Sidebar active="Planner" />
-
-      <main className="flex min-h-screen flex-1 flex-col overflow-y-auto">
-        <header
-          className="sticky top-0 z-30 border-b px-6 py-5 lg:px-10"
-          style={{
-            borderColor: 'rgba(255,255,255,0.06)',
-            background: 'rgba(0,0,0,0.9)',
-            backdropFilter: 'blur(18px)',
-          }}
-        >
-          <div className="mx-auto flex w-full max-w-[1480px] flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-            <div>
+              )}
               <div
-                className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em]"
-                style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(247,248,251,0.7)' }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full"
+                style={{
+                  background: "rgba(99,102,241,0.08)",
+                  color: "#818cf8",
+                  border: "1px solid rgba(99,102,241,0.14)",
+                }}
+                >
+                  <span className="text-[11px] font-semibold">
+                    {totalCount > 0
+                      ? `${completedCount}/${totalCount} completed`
+                      : "No tasks yet"}
+                  </span>
+                </div>
+              <div
+                onClick={() => {
+                  if (notificationPermission !== "granted") {
+                    requestBrowserNotificationPermission();
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full"
+                style={{
+                  background:
+                    notificationPermission === "granted"
+                      ? "rgba(16,185,129,0.08)"
+                      : notificationPermission === "denied"
+                        ? "rgba(239,68,68,0.08)"
+                        : "rgba(245,158,11,0.08)",
+                  color:
+                    notificationPermission === "granted"
+                      ? "#10b981"
+                      : notificationPermission === "denied"
+                        ? "#ef4444"
+                        : "#f59e0b",
+                  border:
+                    notificationPermission === "granted"
+                      ? "1px solid rgba(16,185,129,0.14)"
+                      : notificationPermission === "denied"
+                        ? "1px solid rgba(239,68,68,0.14)"
+                        : "1px solid rgba(245,158,11,0.14)",
+                  cursor: notificationPermission === "granted" ? "default" : "pointer",
+                }}
               >
-                <Brain size={14} />
-                Adaptive planner
+                <span className="text-[11px] font-semibold">
+                  {notificationPermission === "granted"
+                    ? "Notifications on"
+                    : notificationPermission === "denied"
+                      ? "Notifications blocked"
+                      : "Enable notifications"}
+                </span>
               </div>
-              <h1 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-white lg:text-6xl">Adaptive Planner</h1>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3 xl:w-[560px]">
-              <StatusTile
-                label="Live focus"
-                value={live ? (live.is_distracted ? 'Distracted' : 'Focused') : 'Offline'}
-                helper={live ? `${Math.round((live.confidence || 0) * 100)}% confidence` : '--'}
-                tone={live?.is_distracted ? '#ffb2a6' : '#ffffff'}
-              />
-              <StatusTile
-                label="Current task"
-                value={activeTask?.subject || '--'}
-                helper={activeTask?.scheduled_slot || 'No active task'}
-              />
-              <StatusTile
-                label="Streak"
-                value={streak.focus_streak ?? 0}
-                helper={`Best ${streak.best_streak ?? 0}`}
-              />
             </div>
           </div>
         </header>
 
-        <div className="mx-auto w-full max-w-[1480px] flex-1 px-6 py-8 lg:px-10">
-          <div className="mb-6 flex flex-wrap gap-2">
-            {tabs.map((item) => {
-              const Icon = item.icon;
-              const active = tab === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => setTab(item.key)}
-                  className="inline-flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition"
+        {rescheduleAlert && !shortBreakActive && (
+          <div className="max-w-[1440px] mx-auto w-full px-6 lg:px-8 pt-5">
+            <div
+              className="p-4 rounded-[24px] flex items-center gap-3 planner-card"
+              style={{
+                background: "rgba(168,85,247,0.06)",
+                border: "1px solid rgba(168,85,247,0.12)",
+              }}
+            >
+              <RefreshCw
+                className="w-4 h-4 flex-shrink-0"
+                style={{ color: "#a855f7" }}
+              />
+              <p
+                className="text-[12px] flex-1"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <strong style={{ color: "#a855f7" }}>Auto-rescheduled</strong> "
+                {rescheduleAlert.task_subject}" moved to{" "}
+                {rescheduleAlert.new_slot}
+              </p>
+              <button
+                onClick={() => setRescheduleAlert(null)}
+                className="p-1 rounded-lg hover:opacity-60"
+              >
+                <X
+                  className="w-3.5 h-3.5"
+                  style={{ color: "var(--text-muted)" }}
+                />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 px-6 lg:px-8 py-6 max-w-[1440px] mx-auto w-full">
+          <section className="planner-hero rounded-[32px] p-5 lg:p-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-[1.35fr,0.9fr] gap-5 items-start">
+              <div>
+                <div
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-3"
                   style={{
-                    background: active ? 'linear-gradient(135deg, rgba(255,176,102,0.2), rgba(92,170,255,0.18))' : 'rgba(255,255,255,0.04)',
-                    color: active ? '#fff7eb' : 'rgba(207,216,236,0.74)',
-                    border: '1px solid rgba(255,255,255,0.08)',
+                    background: "rgba(129,140,248,0.1)",
+                    color: "var(--accent)",
+                    border: "1px solid rgba(129,140,248,0.18)",
                   }}
                 >
-                  <Icon size={16} />
-                  {item.label}
-                </button>
-              );
-            })}
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-semibold">
+                    Adaptive study planning
+                  </span>
+                </div>
+                <h2
+                  className="text-[18px] lg:text-[22px] font-black leading-tight max-w-[620px]"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Build a sharper day with cleaner scheduling, fewer
+                  distractions, and clearer execution.
+                </h2>
+                <p
+                  className="text-[12px] mt-2 max-w-[620px] leading-relaxed"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  1. Add your sleep hours in the sleep log.
+                  <br />
+                  2. Add your study tasks before you start the day.
+                  <br />
+                  3. Start a study task timer when you begin studying.
+                  <br />
+                  4. Use the social media timer only when you are actually using social media.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  {
+                    label: "Total study time",
+                    value: formatCompactStudyDuration(todayStudySeconds),
+                    icon: Brain,
+                    tone: "#818cf8",
+                  },
+                  {
+                    label: "Social time",
+                    value: dailySocialLabel,
+                    icon: AlertTriangle,
+                    tone: socialLimitExceeded ? "#ef4444" : "#f59e0b",
+                  },
+                  {
+                    label: "Sleep time",
+                    value: dailySleepLabel,
+                    icon: Coffee,
+                    tone: "#38bdf8",
+                  },
+                ].map(({ label, value, icon: Icon, tone }) => (
+                  <div key={label} className="rounded-[24px] p-4 planner-stat">
+                    <div
+                      className="w-8 h-8 rounded-2xl flex items-center justify-center mb-3"
+                      style={{ background: `${tone}14`, color: tone }}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </div>
+                    <div
+                      className="text-[16px] lg:text-[18px] font-black tracking-tight"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      {value}
+                    </div>
+                    <div
+                      className="text-[10px] mt-1"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {label}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+
+          <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <section className="rounded-[28px] p-5 planner-card planner-subtle">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Social Timer
+                  </p>
+                  <h2
+                    className="text-[16px] font-semibold tracking-tight"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Today&apos;s Social Media Time: {dailySocialLabel}
+                  </h2>
+                </div>
+                <div
+                  className="px-3 py-1.5 rounded-full text-[10px] font-semibold"
+                  style={{
+                    background: socialTimerRunning ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                    color: socialTimerRunning ? "#ef4444" : "#10b981",
+                    border: socialTimerRunning
+                      ? "1px solid rgba(239,68,68,0.18)"
+                      : "1px solid rgba(16,185,129,0.18)",
+                  }}
+                >
+                  {socialTimerRunning ? "Running" : "Stopped"}
+                </div>
+              </div>
+
+              <div
+                className="rounded-[22px] p-4 mb-4 text-center"
+                style={{
+                  background: "rgba(245,158,11,0.08)",
+                  border: "1px solid rgba(245,158,11,0.14)",
+                }}
+              >
+                <p
+                  className="text-[24px] font-black tracking-tight"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  {liveSocialTimerLabel}
+                </p>
+                <p
+                  className="text-[11px] mt-1"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {socialTimerRunning
+                    ? "Tracking the current social media session live."
+                    : `Stored locally as ${getSocialStorageKey(sleepDateKey)}`}
+                </p>
+              </div>
+
+              <button
+                onClick={socialTimerRunning ? stopSocialTimer : startSocialTimer}
+                className="w-full py-3 rounded-2xl text-[12px] font-semibold text-white"
+                style={{
+                  background: socialTimerRunning
+                    ? "linear-gradient(135deg, rgba(239,68,68,0.95), rgba(220,38,38,0.78))"
+                    : "linear-gradient(135deg, rgba(245,158,11,0.95), rgba(217,119,6,0.82))",
+                  boxShadow: socialTimerRunning
+                    ? "0 14px 28px rgba(239,68,68,0.18)"
+                    : "0 14px 28px rgba(245,158,11,0.18)",
+                }}
+              >
+                {socialTimerRunning ? "Stop Social Media Timer" : "Start Social Media Timer"}
+              </button>
+
+              <p
+                className="text-[10px] mt-3"
+                style={{ color: socialLimitExceeded ? "#ef4444" : "var(--text-muted)" }}
+              >
+                {socialLimitExceeded
+                  ? "Warning: social media usage has exceeded 2 hours today."
+                  : "Only one social media timer can run at a time, and it auto-stops when a study task starts."}
+              </p>
+            </section>
+
+            <section className="rounded-[28px] p-5 planner-card">
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className="w-full flex items-center justify-between mb-4"
+              >
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Inputs
+                  </p>
+                  <h2
+                    className="text-[16px] font-semibold tracking-tight"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Student Profile
+                  </h2>
+                </div>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${profileOpen ? "rotate-180" : ""}`}
+                  style={{ color: "var(--text-muted)" }}
+                />
+              </button>
+
+              {profileOpen && (
+                <div className="space-y-4 pb-1">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        className="text-[10px] font-medium block mb-1.5"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Age
+                      </label>
+                      <input
+                        type="number"
+                        min={14}
+                        max={35}
+                        value={form.age}
+                        onChange={(e) =>
+                          update("age", parseInt(e.target.value, 10) || 18)
+                        }
+                        className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                        style={{
+                          background: "var(--bg-elevated)",
+                          color: "var(--text-primary)",
+                          border: "1px solid var(--border)",
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className="text-[10px] font-medium block mb-1.5"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Gender
+                      </label>
+                      <div className="flex gap-1.5">
+                        {["Male", "Female"].map((g) => (
+                          <button
+                            key={g}
+                            onClick={() => update("gender", g)}
+                            className="flex-1 py-3 rounded-2xl text-[11px] font-semibold transition-all"
+                            style={{
+                              background:
+                                form.gender === g
+                                  ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.74))"
+                                  : "var(--bg-elevated)",
+                              color:
+                                form.gender === g
+                                  ? "#fff"
+                                  : "var(--text-muted)",
+                              boxShadow:
+                                form.gender === g
+                                  ? "0 12px 24px rgba(99,102,241,0.2)"
+                                  : "none",
+                            }}
+                          >
+                            {g}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {[
+                    {
+                      key: "study_hours_per_day",
+                      label: "Study hours / day",
+                      min: 0,
+                      max: 12,
+                      step: 0.5,
+                      color: "#818cf8",
+                    },
+                    {
+                      key: "sleep_hours",
+                      label: "Sleep hours / day",
+                      min: 0,
+                      max: 12,
+                      step: 0.5,
+                      color: "#38bdf8",
+                    },
+                    {
+                      key: "total_social_hours",
+                      label: "Social media hours",
+                      min: 0,
+                      max: 5,
+                      step: 0.1,
+                      color: "#f59e0b",
+                    },
+                  ].map(({ key, label, min, max, step, color }) => (
+                    <div key={key}>
+                      <div className="flex justify-between mb-2">
+                        <label
+                          className="text-[10px] font-medium"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {label}
+                        </label>
+                        <span
+                          className="text-[12px] font-bold"
+                          style={{ color }}
+                        >
+                          {form[key]}h
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={min}
+                        max={max}
+                        step={step}
+                        value={form[key]}
+                        onChange={(e) =>
+                          update(key, parseFloat(e.target.value))
+                        }
+                        className="slider-input w-full"
+                        style={{
+                          "--slider-color": color,
+                          "--slider-fill": `${getSliderFillPercentage(form[key], min, max)}%`,
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-[28px] p-5 planner-card planner-subtle">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <p
+                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Sleep Log
+                  </p>
+                  <h2
+                    className="text-[16px] font-semibold tracking-tight"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    How long did you sleep today?
+                  </h2>
+                </div>
+                <div className="text-right">
+                  <p
+                    className="text-[10px] uppercase tracking-[0.24em] font-semibold"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Total today
+                  </p>
+                  <p
+                    className="text-[20px] font-black tracking-tight"
+                    style={{ color: "#38bdf8" }}
+                  >
+                    {dailySleepLabel}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div
+                  className="rounded-[18px] px-4 py-3"
+                  style={{
+                    background: "rgba(56,189,248,0.08)",
+                    border: "1px solid rgba(56,189,248,0.16)",
+                  }}
+                >
+                  <p
+                    className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Last night
+                  </p>
+                  <p
+                    className="text-[16px] font-bold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {initialSleepMinutes > 0 ? initialSleepLabel : "Not added yet"}
+                  </p>
+                </div>
+                <div
+                  className="rounded-[18px] px-4 py-3"
+                  style={{
+                    background: "rgba(16,185,129,0.08)",
+                    border: "1px solid rgba(16,185,129,0.16)",
+                  }}
+                >
+                  <p
+                    className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Additional sleep
+                  </p>
+                  <p
+                    className="text-[16px] font-bold"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    {additionalSleepMinutes > 0 ? additionalSleepLabel : "0m"}
+                  </p>
+                </div>
+              </div>
+
+              {showInitialSleepPrompt && (
+                <div
+                  className="rounded-[22px] p-4 mb-4"
+                  style={{
+                    background: "rgba(56,189,248,0.08)",
+                    border: "1px solid rgba(56,189,248,0.18)",
+                  }}
+                >
+                  <p
+                    className="text-[12px] font-semibold mb-3"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    How many hours did you sleep last night?
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        className="text-[10px] font-medium block mb-1.5"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Hours
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={24}
+                        value={initialSleepInput.hours}
+                        onChange={(e) =>
+                          updateSleepField("hours", e.target.value, setInitialSleepInput)
+                        }
+                        className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                        style={{
+                          background: "var(--bg-elevated)",
+                          color: "var(--text-primary)",
+                          border: "1px solid var(--border)",
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className="text-[10px] font-medium block mb-1.5"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Minutes
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={59}
+                        value={initialSleepInput.minutes}
+                        onChange={(e) =>
+                          updateSleepField("minutes", e.target.value, setInitialSleepInput)
+                        }
+                        className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                        style={{
+                          background: "var(--bg-elevated)",
+                          color: "var(--text-primary)",
+                          border: "1px solid var(--border)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleInitialSleepSubmit}
+                    className="w-full mt-3 py-3 rounded-2xl text-[12px] font-semibold text-white"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, rgba(56,189,248,0.95), rgba(14,165,233,0.78))",
+                      boxShadow: "0 14px 28px rgba(14,165,233,0.18)",
+                    }}
+                  >
+                    Save Last Night&apos;s Sleep
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label
+                    className="text-[10px] font-medium block mb-1.5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Hours
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={24}
+                    value={sleepInput.hours}
+                    onChange={(e) =>
+                      updateSleepField("hours", e.target.value, setSleepInput)
+                    }
+                    className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </div>
+                <div>
+                  <label
+                    className="text-[10px] font-medium block mb-1.5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Minutes
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={59}
+                    value={sleepInput.minutes}
+                    onChange={(e) =>
+                      updateSleepField("minutes", e.target.value, setSleepInput)
+                    }
+                    className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                    style={{
+                      background: "var(--bg-elevated)",
+                      color: "var(--text-primary)",
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleSleepAdd}
+                className="w-full mt-3 py-3 rounded-2xl text-[12px] font-semibold text-white"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.82))",
+                  boxShadow: "0 14px 28px rgba(16,185,129,0.18)",
+                }}
+              >
+                Add Additional Sleep Time
+              </button>
+              <p
+                className="text-[10px] mt-3"
+                style={{ color: sleepError ? "#ef4444" : "var(--text-muted)" }}
+              >
+                {sleepError || `Stored locally as ${getSleepStorageKey(sleepDateKey)}`}
+              </p>
+            </section>
+          </section>
+
+          <div className="grid grid-cols-12 gap-6">
+            <div className="col-span-12 lg:col-span-3 space-y-6">
+              <FocusTimer
+                onTasksChanged={fetchTasks}
+                onStartTask={handleStartTimer}
+                notificationsMutedUntil={notificationsMutedUntil}
+                shortBreakActive={shortBreakActive}
+                shortBreakRemainingSeconds={shortBreakRemainingSeconds}
+                breakMinutesInput={breakMinutesInput}
+                onBreakMinutesChange={setBreakMinutesInput}
+                onStartBreak={startShortBreak}
+                onEndBreak={() => setShortBreakEndAt(null)}
+              />
+
+            </div>
+
+            <div className="col-span-12 lg:col-span-5 space-y-6">
+              {error && (
+                <div
+                  className="p-3.5 rounded-2xl text-[12px] font-medium flex items-center gap-2 planner-card"
+                  style={{
+                    background: "rgba(239,68,68,0.06)",
+                    color: "#ef4444",
+                    border: "1px solid rgba(239,68,68,0.12)",
+                  }}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
+                </div>
+              )}
+
+              <section className="rounded-[30px] p-5 lg:p-6 planner-card">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <p
+                      className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Queue
+                    </p>
+                    <h2
+                      className="text-[18px] font-semibold tracking-tight"
+                      style={{ color: "var(--text-primary)" }}
+                    >
+                      Tasks{" "}
+                      {taskStats ? (
+                        <span
+                          className="font-normal"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          ({taskStats.total})
+                        </span>
+                      ) : (
+                        ""
+                      )}
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setShowAddTask(!showAddTask)}
+                    className="px-4 h-10 rounded-2xl flex items-center justify-center transition-all text-[12px] font-semibold"
+                    style={{
+                      background: showAddTask
+                        ? "rgba(239,68,68,0.1)"
+                        : "linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.82))",
+                      color: showAddTask ? "#ef4444" : "#ffffff",
+                      border: showAddTask
+                        ? "1px solid rgba(239,68,68,0.18)"
+                        : "1px solid rgba(16,185,129,0.2)",
+                      boxShadow: showAddTask
+                        ? "none"
+                        : "0 12px 24px rgba(16,185,129,0.2)",
+                    }}
+                  >
+                    {showAddTask ? "Close" : "Add Task"}
+                  </button>
+                </div>
+
+                <div className="flex gap-2 mb-5 flex-wrap">
+                  {["all", "active", "completed", "missed"].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveTab(tab)}
+                      className="px-3.5 py-2 rounded-full text-[11px] font-semibold capitalize transition-all"
+                      style={{
+                        color: activeTab === tab ? "#fff" : "var(--text-muted)",
+                        background:
+                          activeTab === tab
+                            ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.75))"
+                            : "transparent",
+                        border:
+                          activeTab === tab
+                            ? "1px solid rgba(129,140,248,0.18)"
+                            : "1px solid var(--border)",
+                      }}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {showAddTask && (
+                  <div
+                    className="mb-5 p-5 rounded-[24px] space-y-3 planner-subtle"
+                    style={{ border: "1px solid var(--border)" }}
+                  >
+                    <input
+                      value={newTask.subject}
+                      placeholder="What do you need to study?"
+                      onChange={(e) =>
+                        setNewTask((t) => ({ ...t, subject: e.target.value }))
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && handleAddTask()}
+                      className="w-full px-0 py-2 text-[15px] font-medium outline-none bg-transparent placeholder:text-[var(--text-muted)]"
+                      style={{
+                        color: "var(--text-primary)",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                      autoFocus
+                    />
+<div className="space-y-4">
+  {/* Duration */}
+  <div>
+    <label
+      className="text-[10px] font-semibold uppercase tracking-wider block mb-2"
+      style={{ color: "var(--text-muted)" }}
+    >
+      Duration
+    </label>
+
+    <div className="flex gap-2">
+      {[15, 30, 60, 90].map((d) => (
+        <button
+          key={d}
+          type="button"
+          onClick={() =>
+            setNewTask((t) => ({
+              ...t,
+              duration_minutes: d,
+            }))
+          }
+          className="flex-1 py-3 rounded-2xl text-[12px] font-semibold transition-all"
+          style={{
+            background:
+              newTask.duration_minutes === d
+                ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.74))"
+                : "var(--bg-secondary)",
+            color: newTask.duration_minutes === d ? "#fff" : "#cbd5f5",
+            border:
+              newTask.duration_minutes === d
+                ? "none"
+                : "1px solid var(--border)",
+            boxShadow:
+              newTask.duration_minutes === d
+                ? "0 10px 20px rgba(99,102,241,0.25)"
+                : "none",
+          }}
+        >
+          {d === 60 ? "1 hour" : d === 90 ? "1.5 hours" : `${d} mins`}
+        </button>
+      ))}
+    </div>
+  </div>
+
+  {/* Start Time */}
+  <div>
+    <label
+      className="text-[10px] font-semibold uppercase tracking-wider block mb-2"
+      style={{ color: "var(--text-muted)" }}
+    >
+      Start Time <span style={{ color: "#ef4444" }}>*</span>
+    </label>
+
+    <div className="flex items-center gap-3">
+      {/* Hour */}
+      <select
+        value={newTask.start_hour}
+        onChange={(e) =>
+          setNewTask((t) => ({
+            ...t,
+            start_hour: e.target.value,
+          }))
+        }
+        className="w-[110px] px-4 py-3 rounded-2xl text-[15px] font-semibold outline-none text-center"
+        style={{
+          background: "var(--bg-secondary)",
+          color: "#ffffff",
+          border: "1px solid var(--border)",
+          WebkitTextFillColor: "#ffffff",
+        }}
+      >
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"].map((h) => (
+          <option key={h} value={h}>
+            {h}
+          </option>
+        ))}
+      </select>
+
+      <span className="text-xl font-bold" style={{ color: "#818cf8" }}>
+        :
+      </span>
+
+      {/* Minute */}
+      <select
+        value={newTask.start_minute}
+        onChange={(e) =>
+          setNewTask((t) => ({
+            ...t,
+            start_minute: e.target.value,
+          }))
+        }
+        className="w-[110px] px-4 py-3 rounded-2xl text-[15px] font-semibold outline-none text-center"
+        style={{
+          background: "var(--bg-secondary)",
+          color: "#ffffff",
+          border: "1px solid var(--border)",
+          WebkitTextFillColor: "#ffffff",
+        }}
+      >
+        {["00", "15", "30", "45"].map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+
+      {/* AM/PM */}
+      <div className="flex gap-2">
+        {["AM", "PM"].map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() =>
+              setNewTask((t) => ({
+                ...t,
+                start_meridiem: m,
+              }))
+            }
+            className="px-4 py-3 rounded-2xl text-[13px] font-semibold transition-all"
+            style={{
+              background:
+                newTask.start_meridiem === m
+                  ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.74))"
+                  : "var(--bg-secondary)",
+              color: newTask.start_meridiem === m ? "#fff" : "#cbd5f5",
+              border:
+                newTask.start_meridiem === m
+                  ? "none"
+                  : "1px solid var(--border)",
+              boxShadow:
+                newTask.start_meridiem === m
+                  ? "0 10px 20px rgba(99,102,241,0.25)"
+                  : "none",
+            }}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+    </div>
+  </div>
+</div>
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={handleAddTask}
+                        className="flex-1 py-3 rounded-2xl text-[11px] font-semibold text-white"
+                        style={{
+                          background:
+                            "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.74))",
+                          boxShadow: "0 16px 28px rgba(99,102,241,0.18)",
+                        }}
+                      >
+                        Add Task
+                      </button>
+                      <button
+                        onClick={() => setShowAddTask(false)}
+                        className="px-4 py-3 rounded-2xl text-[11px] font-semibold"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div
+                  className="space-y-2 max-h-[560px] overflow-y-auto pr-1"
+                  style={{
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "var(--border) transparent",
+                  }}
+                >
+                  {filteredTasks.length === 0 ? (
+                    <div className="py-16 text-center rounded-[24px] planner-subtle">
+                      <p
+                        className="text-[12px] font-medium"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {activeTab === "all"
+                          ? "No tasks yet"
+                          : `No ${activeTab} tasks`}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredTasks.map((task) => (
+                      <div
+  key={task.id}
+  className="group flex items-center gap-3 px-4 py-4 rounded-[22px] transition-all planner-task-row"
+  style={{
+    background:
+      activeTaskId === task.id && isRunning
+        ? "linear-gradient(135deg, rgba(16,185,129,0.35), rgba(5,150,105,0.32))"
+        : task.status === "completed"
+        ? "rgba(16,185,129,0.12)"
+        : task.status === "pending"
+        ? "rgba(239,68,68,0.10)"
+        : task.status === "missed"
+        ? "rgba(127,29,29,0.45)"
+        : task.status === "rescheduled"
+        ? "rgba(59,130,246,0.15)"  // 🔵 BLUE
+        : "var(--card-bg)",
+  
+    border:
+      activeTaskId === task.id && isRunning
+        ? "1px solid rgba(16,185,129,0.7)"
+        : task.status === "completed"
+        ? "1px solid rgba(16,185,129,0.4)"
+        : task.status === "pending"
+        ? "1px solid rgba(239,68,68,0.35)"
+        : task.status === "missed"
+        ? "1px solid rgba(239,68,68,0.45)"
+        : task.status === "rescheduled"
+        ? "1px solid rgba(59,130,246,0.5)" // 🔵
+        : "1px solid transparent",
+    boxShadow:
+      activeTaskId === task.id && isRunning
+        ? "0 18px 32px rgba(16,185,129,0.24)"
+        : "none",
+  }}
+>
+                        <PriorityDot priority={task.priority} />
+                        <div className="flex-1 min-w-0 flex flex-col items-center text-center">
+  <div className="flex items-center gap-2 justify-center flex-wrap">
+    <span
+      className="text-[15px] font-semibold"
+      style={{
+        color:
+          activeTaskId === task.id && isRunning
+            ? "#ecfdf5"
+            : task.status === "completed"
+            ? "#10b981"
+            : task.status === "pending"
+            ? "#ef4444"
+            : "var(--text-primary)",
+        textDecoration: "none",
+        opacity:
+          activeTaskId === task.id && isRunning
+            ? 1
+            : task.status === "completed"
+            ? 0.85
+            : 1,
+      }}
+    >
+      {task.subject}
+    </span>
+    <StatusBadge status={task.status} />
+  </div>
+
+  <div className="flex items-center gap-2 mt-1 flex-wrap justify-center">
+    <span
+      className="text-[11px]"
+      style={{
+        color:
+          activeTaskId === task.id && isRunning
+            ? "rgba(236,253,245,0.92)"
+            : "var(--text-muted)",
+      }}
+    >
+      {task.duration_minutes}m
+    </span>
+
+    {task.scheduled_slot && (
+      <span
+        className="text-[11px]"
+        style={{
+          color:
+            activeTaskId === task.id && isRunning
+              ? "rgba(236,253,245,0.92)"
+              : "var(--text-muted)",
+        }}
+      >
+        {task.scheduled_slot}
+      </span>
+    )}
+
+    {task.studied_seconds > 0 && (
+      <span
+        className="text-[11px] font-medium"
+        style={{ color: "#10b981" }}
+      >
+        Studied: {Math.floor(task.studied_seconds / 60)}m {task.studied_seconds % 60}s
+      </span>
+    )}
+
+    {task.distraction_events > 0 && (
+      <span
+        className="text-[11px] font-medium"
+        style={{ color: "#ef4444" }}
+      >
+        {task.distraction_events} distr.
+      </span>
+    )}
+  </div>
+</div>
+                        <div className="flex items-center gap-1 opacity-100 transition-opacity">
+                        {activeTaskId === task.id ? (
+  <div className="flex items-center gap-2">
+    <span
+      className="text-xs font-semibold whitespace-nowrap px-2.5 py-1 rounded-lg"
+      style={{
+        color: "#ecfdf5",
+        background: "rgba(5,150,105,0.35)",
+        border: "1px solid rgba(236,253,245,0.3)",
+      }}
+    >
+      ⏱ {formatTime(timeLeft)}
+    </span>
+
+    {isRunning ? (
+      <>
+        <button
+          onClick={handlePauseTimer}
+          className="w-8 h-8 rounded-xl flex items-center justify-center"
+          style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.08)' }}
+        >
+          <Pause className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          onClick={() => handleFinishTask(task)}
+          className="px-3 h-8 rounded-xl flex items-center justify-center text-xs font-semibold whitespace-nowrap"
+          style={{ color: '#10b981', background: 'rgba(16,185,129,0.12)' }}
+        >
+          Finished
+        </button>
+      </>
+    ) : (
+      <button
+        onClick={() => handleResumeTimer(task)}
+        className="w-8 h-8 rounded-xl flex items-center justify-center"
+        style={{ color: '#10b981', background: 'rgba(16,185,129,0.08)' }}
+      >
+        <Play className="w-3.5 h-3.5" />
+      </button>
+    )}
+  </div>
+) : (
+  (task.status === 'pending' || task.status === 'rescheduled' || task.status === 'active') && (
+    <button
+      onClick={() => {
+        if (activeTaskId && isRunning) {
+          alert("Pause the current task before starting another one.");
+          return;
+        }
+
+        if (task.remaining_seconds && task.remaining_seconds < task.duration_minutes * 60) {
+          handleResumeTimer(task);
+        } else {
+          handleStartTimer(task);
+        }
+      }}
+      className="w-8 h-8 rounded-xl flex items-center justify-center"
+      style={{
+        color: '#818cf8',
+        background: 'rgba(129,140,248,0.08)',
+      }}
+    >
+      <Play className="w-3.5 h-3.5" />
+    </button>
+  )
+)}
+
+<button
+  onClick={() => {
+    if (activeTaskId === task.id && isRunning) {
+      alert("Cannot delete a running task. Pause it first.");
+      return;
+    }
+    deleteTask(task.id);
+  }}
+  disabled={activeTaskId === task.id && isRunning}
+  className="w-8 h-8 rounded-xl flex items-center justify-center"
+  style={{
+    color: (activeTaskId === task.id && isRunning) ? '#6b7280' : '#ef4444',
+    background: (activeTaskId === task.id && isRunning)
+      ? 'rgba(107,114,128,0.12)'
+      : 'rgba(239,68,68,0.08)',
+    cursor: (activeTaskId === task.id && isRunning) ? 'not-allowed' : 'pointer',
+    opacity: (activeTaskId === task.id && isRunning) ? 0.5 : 1
+  }}
+>
+  <Trash2 className="w-3.5 h-3.5" />
+</button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {taskStats && taskStats.total > 0 && (
+                  <div
+                    className="mt-6 pt-4"
+                    style={{ borderTop: "1px solid var(--border)" }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className="text-[11px] font-medium"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {taskStats.completed} of {taskStats.total} complete
+                      </span>
+                      <span
+                        className="text-[13px] font-bold"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {taskStats.completion_rate}%
+                      </span>
+                    </div>
+                    <div
+                      className="w-full h-2 rounded-full overflow-hidden"
+                      style={{ background: "rgba(255,255,255,0.05)" }}
+                    >
+                      <div
+                        className="h-full rounded-full transition-all duration-700"
+                        style={{
+                          width: `${taskStats.completion_rate}%`,
+                          background:
+                            "linear-gradient(90deg, #818cf8, #6366f1)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="col-span-12 lg:col-span-4 space-y-6">
+              {result ? (
+                <>
+                  {result.distraction_aware && result.live_distraction && (
+                    <div
+                      className="flex items-center gap-3 p-4 rounded-[24px] planner-card"
+                      style={{
+                        background: result.live_distraction.is_distracted
+                          ? "rgba(239,68,68,0.04)"
+                          : "rgba(16,185,129,0.04)",
+                        border: `1px solid ${result.live_distraction.is_distracted ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)"}`,
+                      }}
+                    >
+                      <Zap
+                        className="w-4 h-4 flex-shrink-0"
+                        style={{
+                          color: result.live_distraction.is_distracted
+                            ? "#ef4444"
+                            : "#10b981",
+                        }}
+                      />
+                      <div className="flex-1">
+                        <p
+                          className="text-[12px] font-semibold"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {result.live_distraction.is_distracted
+                            ? "Distracted"
+                            : "Focused"}{" "}
+                          {Math.round(result.live_distraction.confidence * 100)}
+                          %
+                        </p>
+                        <p
+                          className="text-[10px] mt-0.5"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {result.live_distraction.dominant_app}
+                          {result.distraction_adjustment > 0 &&
+                            ` · -${Math.round(result.distraction_adjustment * 100)}%`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="p-6 rounded-[30px] planner-card">
+                    <div className="flex flex-col items-center text-center">
+                      <ProbabilityRing
+                        value={result.task_completion_probability}
+                      />
+
+                      <div className="mt-5 mb-3">
+                        <span
+                          className="px-3 py-1 rounded-full text-[11px] font-semibold"
+                          style={{
+                            background:
+                              result.prediction === 1
+                                ? "rgba(16,185,129,0.08)"
+                                : "rgba(239,68,68,0.08)",
+                            color:
+                              result.prediction === 1 ? "#10b981" : "#ef4444",
+                          }}
+                        >
+                          {result.prediction === 1 ? "Can Complete" : "At Risk"}
+                        </span>
+                        {result.distraction_adjustment > 0 && (
+                          <span
+                            className="ml-1.5 px-2 py-1 rounded-full text-[10px] font-semibold"
+                            style={{
+                              background: "rgba(168,85,247,0.08)",
+                              color: "#a855f7",
+                            }}
+                          >
+                            Adjusted
+                          </span>
+                        )}
+                      </div>
+
+                      <h3
+                        className="text-[16px] font-semibold leading-snug mb-1 max-w-[280px]"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {result.planner_decision}
+                      </h3>
+
+                      <p
+                        className="text-[11px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {(result.task_completion_probability * 100).toFixed(1)}%
+                        probability
+                        {result.original_probability !==
+                          result.task_completion_probability && (
+                          <span>
+                            {" "}
+                            · base{" "}
+                            {(result.original_probability * 100).toFixed(1)}%
+                          </span>
+                        )}
+                      </p>
+
+                      {result.new_slot && (
+                        <div
+                          className="mt-4 flex items-center gap-2 px-3 py-2 rounded-xl"
+                          style={{ background: "rgba(99,102,241,0.06)" }}
+                        >
+                          <CalendarCheck
+                            className="w-3.5 h-3.5"
+                            style={{ color: "#818cf8" }}
+                          />
+                          <span
+                            className="text-[11px] font-semibold"
+                            style={{ color: "#818cf8" }}
+                          >
+                            Rescheduled to {result.new_slot}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {result.reschedule_info && (
+                    <div
+                      className="p-4 rounded-[24px] planner-card"
+                      style={{
+                        background: "rgba(168,85,247,0.04)",
+                        border: "1px solid rgba(168,85,247,0.1)",
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <RefreshCw
+                          className="w-4 h-4 flex-shrink-0 mt-0.5"
+                          style={{ color: "#a855f7" }}
+                        />
+                        <div>
+                          <p
+                            className="text-[12px] font-semibold"
+                            style={{ color: "#a855f7" }}
+                          >
+                            Rescheduled
+                          </p>
+                          <p
+                            className="text-[11px] mt-0.5"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            "{result.reschedule_info.task_subject}" to{" "}
+                            {result.reschedule_info.new_slot}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {result.feedback &&
+                    (() => {
+                      const cfg = feedbackConf[
+                        result.feedback.feedback_type
+                      ] || { icon: Sparkles, color: "#818cf8" };
+                      const Icon = cfg.icon;
+                      const suggested = result.feedback.suggested_action || "";
+                      const recoveryEligible =
+                        suggested.toLowerCase().includes("lighter task") &&
+                        suggested.toLowerCase().includes("short break");
+                      return (
+                        <div className="p-5 rounded-[28px] planner-card">
+                          <div className="flex items-center gap-2 mb-4">
+                            <Icon
+                              className="w-4 h-4"
+                              style={{ color: cfg.color }}
+                            />
+                            <h3
+                              className="text-[13px] font-semibold"
+                              style={{ color: "var(--text-primary)" }}
+                            >
+                              AI Feedback
+                            </h3>
+                          </div>
+                          <p
+                            className="text-[13px] leading-relaxed mb-3"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            {result.feedback.message}
+                          </p>
+                          <div
+                            className="flex items-center gap-2 pt-3"
+                            style={{ borderTop: "1px solid var(--border)" }}
+                          >
+                            <ArrowRight
+                              className="w-3 h-3"
+                              style={{ color: cfg.color }}
+                            />
+                            <p
+                              className="text-[11px] font-semibold"
+                              style={{ color: cfg.color }}
+                            >
+                              {suggested}
+                            </p>
+                          </div>
+
+                          {recoveryEligible && (
+                            <div
+                              className="mt-3 p-3 rounded-2xl"
+                              style={{
+                                background: "rgba(255,255,255,0.03)",
+                                border: "1px solid var(--border)",
+                              }}
+                            >
+                              <div className="grid grid-cols-1 gap-2">
+                                <button
+                                  onClick={() => setShowBreakDurationPicker((prev) => !prev)}
+                                  className="w-full py-2.5 rounded-xl text-[11px] font-semibold"
+                                  style={{
+                                    color: "#34d399",
+                                    background: "rgba(52,211,153,0.12)",
+                                    border: "1px solid rgba(52,211,153,0.24)",
+                                  }}
+                                >
+                                  Take Break
+                                </button>
+
+                                <button
+                                  onClick={handleAddSmallTask}
+                                  className="w-full py-2.5 rounded-xl text-[11px] font-semibold text-white"
+                                  style={{
+                                    background:
+                                      "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.76))",
+                                  }}
+                                >
+                                  Add Small Task
+                                </button>
+                              </div>
+
+                              {showBreakDurationPicker && (
+                                <div className="mt-3 flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={59}
+                                    value={breakMinutesInput}
+                                    onChange={(e) =>
+                                      setBreakMinutesInput(
+                                        Math.min(
+                                          59,
+                                          Math.max(1, parseInt(e.target.value || "1", 10)),
+                                        ),
+                                      )
+                                    }
+                                    className="w-20 px-3 py-2 rounded-xl text-[12px] font-semibold outline-none planner-input"
+                                    style={{
+                                      background: "var(--bg-elevated)",
+                                      color: "var(--text-primary)",
+                                      border: "1px solid var(--border)",
+                                    }}
+                                  />
+                                  <span
+                                    className="text-[11px]"
+                                    style={{ color: "var(--text-muted)" }}
+                                  >
+                                    minutes (max 59)
+                                  </span>
+                                  <button
+                                    onClick={startShortBreak}
+                                    className="ml-auto px-3 py-2 rounded-xl text-[11px] font-semibold text-white"
+                                    style={{
+                                      background:
+                                        "linear-gradient(135deg, rgba(52,211,153,0.95), rgba(16,185,129,0.82))",
+                                    }}
+                                  >
+                                    Start Break
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                  {result.social_alert && (
+                    <div
+                      className="p-5 rounded-[28px] planner-card"
+                      style={{
+                        background: "rgba(245,158,11,0.04)",
+                        border: "1px solid rgba(245,158,11,0.1)",
+                      }}
+                    >
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle
+                          className="w-4 h-4 flex-shrink-0 mt-0.5"
+                          style={{ color: "#f59e0b" }}
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1">
+                            <h4
+                              className="text-[12px] font-semibold"
+                              style={{ color: "#f59e0b" }}
+                            >
+                              Social Media Alert
+                            </h4>
+                            <span
+                              className="text-[10px] font-semibold"
+                              style={{ color: "#f59e0b" }}
+                            >
+                              #{result.social_alert.alert_count}
+                            </span>
+                          </div>
+                          <p
+                            className="text-[12px] leading-relaxed"
+                            style={{ color: "var(--text-secondary)" }}
+                          >
+                            {result.social_alert.message}
+                          </p>
+                          <p
+                            className="text-[10px] mt-2"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {result.social_alert.suggested_action}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="p-6 rounded-[30px] planner-card planner-empty">
+                  <div
+                    className="w-16 h-16 rounded-[24px] mb-5 flex items-center justify-center"
+                    style={{ background: "rgba(129,140,248,0.12)" }}
+                  >
+                    <Sparkles
+                      className="w-7 h-7"
+                      style={{ color: "var(--accent)" }}
+                    />
+                  </div>
+                  <h3
+                    className="text-[20px] font-black tracking-tight mb-2"
+                    style={{ color: "var(--text-primary)" }}
+                  >
+                    Ready to analyze
+                  </h3>
+                  <p
+                    className="text-[12px] max-w-[280px] leading-relaxed mb-5"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {canShowPrediction
+                      ? "Build your task list, tune the profile, and run the planner for a probability-based study recommendation."
+                      : "Add last night's sleep in the sleep log first. The prediction will appear after the student saves that entry."}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: "Tasks in queue", value: tasks.length },
+                      { label: "Active now", value: activeCount },
+                      { label: "Current streak", value: currentStreak || "—" },
+                      {
+                        label: "Focus rate",
+                        value: focusRate != null ? `${focusRate}%` : "—",
+                      },
+                    ].map(({ label, value }) => (
+                      <div
+                        key={label}
+                        className="rounded-[20px] p-4 planner-subtle"
+                      >
+                        <div
+                          className="text-[18px] font-black tracking-tight"
+                          style={{ color: "var(--text-primary)" }}
+                        >
+                          {value}
+                        </div>
+                        <div
+                          className="text-[10px] mt-1"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {label}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-
-          <CapabilityNotice capabilities={capabilities} />
-
-          {tab === 'overview' ? overviewTab : null}
-          {tab === 'schedule' ? scheduleTab : null}
-          {tab === 'analytics' ? analyticsTab : null}
-          {tab === 'profile' ? profileTab : null}
         </div>
-
         <Footer />
+        
+
       </main>
+
+     
+
+
+      <style>{`
+        .planner-hero {
+          background:
+            radial-gradient(circle at top left, rgba(129,140,248,0.22), transparent 34%),
+            radial-gradient(circle at bottom right, rgba(56,189,248,0.12), transparent 28%),
+            linear-gradient(180deg, rgba(13,16,28,0.96), rgba(11,14,22,0.92));
+          border: 1px solid rgba(255,255,255,0.06);
+          box-shadow: 0 26px 60px rgba(2,6,23,0.3);
+        }
+        .planner-card {
+          background: linear-gradient(180deg, rgba(16,19,29,0.92), rgba(11,14,22,0.9));
+          border: 1px solid rgba(255,255,255,0.06);
+          box-shadow: 0 18px 48px rgba(2,6,23,0.22);
+        }
+        .planner-subtle {
+          background: rgba(255,255,255,0.03);
+        }
+        .planner-stat {
+          background: rgba(255,255,255,0.04);
+          border: 1px solid rgba(255,255,255,0.06);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        }
+        .planner-action {
+          background:
+            radial-gradient(circle at top left, rgba(255,255,255,0.14), transparent 34%),
+            linear-gradient(135deg, rgba(99,102,241,0.88), rgba(79,70,229,0.78));
+          border: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 28px 56px rgba(79,70,229,0.28);
+        }
+        .planner-task-row {
+          background: rgba(255,255,255,0.02);
+          border: 1px solid transparent;
+        }
+        .planner-task-row:hover {
+          background: rgba(255,255,255,0.04);
+          border-color: rgba(255,255,255,0.06);
+          transform: translateY(-1px);
+        }
+        .planner-empty {
+          background:
+            radial-gradient(circle at top left, rgba(129,140,248,0.18), transparent 34%),
+            linear-gradient(180deg, rgba(16,19,29,0.92), rgba(11,14,22,0.9));
+        }
+        .planner-input:focus {
+          border-color: rgba(129,140,248,0.45) !important;
+          box-shadow: 0 0 0 4px rgba(129,140,248,0.08);
+        }
+        .slider-input {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 6px;
+          border-radius: 999px;
+          background: linear-gradient(
+            90deg,
+            var(--slider-color, var(--accent)) 0%,
+            var(--slider-color, var(--accent)) var(--slider-fill, 0%),
+            rgba(255,255,255,0.08) var(--slider-fill, 0%),
+            rgba(255,255,255,0.08) 100%
+          );
+          outline: none;
+        }
+        .slider-input::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 0;
+          height: 0;
+          border-radius: 0;
+          background: transparent;
+          cursor: pointer;
+          border: 0;
+          box-shadow: none;
+          transition: none;
+        }
+        .slider-input::-moz-range-thumb {
+          width: 0;
+          height: 0;
+          border-radius: 0;
+          background: transparent;
+          cursor: pointer;
+          border: 0;
+          box-shadow: none;
+        }
+        select {
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 12px center;
+          padding-right: 30px !important;
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
+
+      {shortBreakActive && (
+        <div className="fixed top-4 right-4 z-[72] w-[min(92vw,360px)]">
+          <div
+            className="rounded-[22px] p-4 planner-card"
+            style={{
+              border: "1px solid rgba(52,211,153,0.24)",
+              boxShadow: "0 20px 42px rgba(2,6,23,0.42)",
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-semibold" style={{ color: "#34d399" }}>
+                Break Time
+              </p>
+              <button
+                onClick={() => setShortBreakEndAt(null)}
+                className="text-[10px] font-semibold px-2 py-1 rounded-lg"
+                style={{ color: "var(--text-secondary)", background: "rgba(255,255,255,0.06)" }}
+              >
+                End
+              </button>
+            </div>
+            <div className="text-[28px] font-black tracking-tight" style={{ color: "#34d399" }}>
+              {formatTime(shortBreakRemainingSeconds)}
+            </div>
+            <p className="text-[12px] mt-2 font-medium" style={{ color: "var(--text-primary)" }}>
+              {breakMotivationMessages[breakMotivationIndex]}
+            </p>
+            <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
+              Alerts and notifications are paused until break ends.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {startReminderTask && !shortBreakActive && (
+        <div className="fixed bottom-5 right-5 z-[70] w-[min(92vw,380px)]">
+          <div
+            className="rounded-[24px] p-4 planner-card"
+            style={{
+              border: "1px solid rgba(129,140,248,0.24)",
+              boxShadow: "0 20px 42px rgba(2,6,23,0.42)",
+            }}
+          >
+            <div
+              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full mb-2"
+              style={{
+                background: "rgba(129,140,248,0.14)",
+                border: "1px solid rgba(129,140,248,0.22)",
+                color: "#a5b4fc",
+              }}
+            >
+              <Play className="w-3 h-3" />
+              <span className="text-[10px] font-semibold">Start Reminder</span>
+            </div>
+            <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+              It’s time to start "{startReminderTask.subject}"
+            </p>
+            <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
+              Scheduled at {startReminderTask.scheduled_slot || "planned time"}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleStartReminderStart}
+                className="flex-1 py-2.5 rounded-xl text-[11px] font-semibold text-white"
+                style={{
+                  background:
+                    "linear-gradient(135deg, rgba(129,140,248,0.96), rgba(99,102,241,0.8))",
+                  boxShadow: "0 12px 20px rgba(99,102,241,0.24)",
+                }}
+              >
+                Start Now
+              </button>
+              <button
+                onClick={handleStartReminderLater}
+                className="px-3.5 py-2.5 rounded-xl text-[11px] font-semibold"
+                style={{
+                  color: "var(--text-secondary)",
+                  background: "rgba(255,255,255,0.05)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                Remind Later
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
