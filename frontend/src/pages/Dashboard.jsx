@@ -1,14 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Sidebar from '../components/Sidebar';
 import Footer from '../components/Footer';
 import { useAgent } from '../hooks/useAgent';
 import { useTheme } from '../context/ThemeContext';
-import { agentAPI } from '../services/api';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { Activity, Shield, Database, Cpu, Eye, Wifi, WifiOff, BookOpen, Search } from 'lucide-react';
+import { Activity, Shield, Database, Eye, Wifi, WifiOff, BookOpen } from 'lucide-react';
 
 /* ── Focus Gauge ─────────────────────────────────── */
 function FocusGauge({ score, isDistracted, confidence }) {
@@ -50,15 +49,17 @@ function FocusGauge({ score, isDistracted, confidence }) {
 /* ── Stat Card ────────────────────────────────────── */
 function StatCard({ icon: Icon, label, value, sub, iconBg, iconColor }) {
   return (
-    <div className="glass-card glass-card-hover p-5 flex items-start gap-4">
+    <div className="glass-card glass-card-hover h-full p-5 flex flex-col items-center justify-center text-center gap-4">
       <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
         style={{ background: iconBg }}>
         <Icon className="w-5 h-5" style={{ color: iconColor }} />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 flex flex-col items-center">
         <p className="metric-label">{label}</p>
         <p className="metric-value mt-1">{value}</p>
-        {sub && <p className="text-xs font-medium mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</p>}
+        <p className="text-xs font-medium mt-1 leading-5 min-h-[2.5rem] flex items-center justify-center" style={{ color: 'var(--text-muted)' }}>
+          {sub || '\u00A0'}
+        </p>
       </div>
     </div>
   );
@@ -109,20 +110,24 @@ export default function Dashboard() {
     status, connected, prediction, blocker, contentClassifier,
     snapshots, history, toggleBlocking,
   } = useAgent(4000);
-  const [contentForm, setContentForm] = useState({ title: '', url: '', content: '' });
-  const [contentResult, setContentResult] = useState(null);
-  const [contentLoading, setContentLoading] = useState(false);
-  const [contentError, setContentError] = useState('');
 
   const focusScore = prediction ? Math.round((1 - prediction.probability) * 100) : 0;
   const isDistracted = prediction?.is_distracted ?? false;
   const confidence = prediction?.confidence ?? 0;
   const bilstmProb = prediction?.bilstm_prob ?? 0;
-  const appCatScore = prediction?.app_category ?? 0;
+  const appCatScore = prediction?.app_category ?? (status?.latest_snapshot?.app_category_score ?? 0);
   const dominantApp = prediction?.dominant_app ?? '—';
   const attention = prediction?.attention ?? [];
   const blendMode = prediction?.blend_mode ?? '—';
   const label = prediction?.label ?? 'WAITING';
+  const currentSnapshot = status?.latest_snapshot ?? {};
+  const formatAppName = (app) => {
+    const cleaned = (app ?? '').replace('.exe', '').trim();
+    return cleaned || 'No app detected';
+  };
+  const currentAppName = formatAppName(prediction?.dominant_app ?? currentSnapshot.current_app);
+  const currentAppScore = prediction?.app_category ?? currentSnapshot.app_category_score ?? 0;
+  const currentAppLabel = prediction?.label ?? (connected ? 'COLLECTING' : 'WAITING');
 
   // Timeline from history
   const timelineData = useMemo(() => {
@@ -153,20 +158,6 @@ export default function Dashboard() {
   // Latest raw features
   const lastEntry = history?.length > 0 ? history[history.length - 1] : null;
   const rawFeatures = lastEntry?.raw_features ?? {};
-
-  const runContentCheck = async () => {
-    setContentLoading(true);
-    setContentError('');
-    try {
-      const result = await agentAPI.checkContent(contentForm);
-      setContentResult(result);
-    } catch (err) {
-      setContentError(err.message);
-      setContentResult(null);
-    } finally {
-      setContentLoading(false);
-    }
-  };
 
   return (
     <div className="flex min-h-screen" style={{ background: 'var(--bg-primary)' }}>
@@ -256,7 +247,7 @@ export default function Dashboard() {
             </div>
 
             {/* Stat Cards */}
-            <div className="col-span-12 lg:col-span-8 grid grid-cols-2 xl:grid-cols-5 gap-4">
+            <div className="col-span-12 lg:col-span-8 grid grid-cols-2 xl:grid-cols-4 gap-4">
               <StatCard icon={Activity} label="Confidence"
                 value={prediction ? `${Math.round(confidence * 100)}%` : '—'}
                 sub={prediction ? label : 'No data'}
@@ -269,10 +260,6 @@ export default function Dashboard() {
               <StatCard icon={Database} label="Snapshots"
                 value={snapshots || 0} sub="1 per minute"
                 iconBg="var(--warning-bg)" iconColor="var(--warning)" />
-              <StatCard icon={Cpu} label="CPU / MEM"
-                value={rawFeatures.cpu_usage ? `${rawFeatures.cpu_usage}%` : '—'}
-                sub={rawFeatures.memory_usage ? `RAM ${rawFeatures.memory_usage}%` : ''}
-                iconBg="var(--danger-bg)" iconColor="var(--danger)" />
               <StatCard icon={BookOpen} label="Content"
                 value={contentClassifier?.ready ? 'READY' : 'OFFLINE'}
                 sub={contentClassifier?.ready ? 'Classifier linked' : (contentClassifier?.error || 'Model unavailable')}
@@ -419,7 +406,7 @@ export default function Dashboard() {
                     <Eye className="w-4 h-4" style={{ color: isDistracted ? 'var(--danger)' : 'var(--success)' }} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{dominantApp}</p>
+                    <p className="text-xs font-bold truncate" style={{ color: 'var(--text-primary)' }}>{currentAppName}</p>
                     <p className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>
                       {prediction?.app_cat_label ?? 'unknown'} · score {(appCatScore * 100).toFixed(0)}%
                     </p>
@@ -429,7 +416,7 @@ export default function Dashboard() {
                       background: isDistracted ? 'var(--danger-bg)' : 'var(--success-bg)',
                       color: isDistracted ? 'var(--danger)' : 'var(--success)',
                     }}>
-                    {label}
+                    {currentAppLabel}
                   </div>
                 </div>
               </div>
@@ -447,123 +434,6 @@ export default function Dashboard() {
                     <p className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>{v}</p>
                   </div>
                 ))}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Row 4: Recent Activity ────────── */}
-          <div className="glass-card p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Content Classification</h3>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Test the `content_classification` module through the main SDPPS API
-                </p>
-              </div>
-              <div className="px-3 py-1 rounded-full text-[10px] font-semibold"
-                style={{
-                  background: contentClassifier?.ready ? 'var(--success-bg)' : 'var(--warning-bg)',
-                  color: contentClassifier?.ready ? 'var(--success)' : 'var(--warning)',
-                }}>
-                {contentClassifier?.ready ? 'Model Ready' : 'Model Unavailable'}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-12 gap-4">
-              <div className="col-span-12 lg:col-span-7 space-y-3">
-                <input
-                  value={contentForm.title}
-                  onChange={(e) => setContentForm((prev) => ({ ...prev, title: e.target.value }))}
-                  placeholder="Page title"
-                  className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none transition-all"
-                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                />
-                <input
-                  value={contentForm.url}
-                  onChange={(e) => setContentForm((prev) => ({ ...prev, url: e.target.value }))}
-                  placeholder="URL"
-                  className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none transition-all"
-                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                />
-                <textarea
-                  value={contentForm.content}
-                  onChange={(e) => setContentForm((prev) => ({ ...prev, content: e.target.value }))}
-                  placeholder="Paste page content or transcript"
-                  rows={7}
-                  className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none transition-all resize-y"
-                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
-                />
-                <button
-                  onClick={runContentCheck}
-                  disabled={!contentClassifier?.ready || contentLoading}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
-                  style={{
-                    background: 'var(--accent-bg)',
-                    color: 'var(--accent)',
-                    border: '1px solid var(--accent)',
-                  }}>
-                  <Search className="w-3.5 h-3.5" />
-                  {contentLoading ? 'Classifying...' : 'Classify Content'}
-                </button>
-              </div>
-
-              <div className="col-span-12 lg:col-span-5">
-                <div className="h-full rounded-2xl p-5" style={{ background: 'var(--bg-elevated)' }}>
-                  <h4 className="text-xs font-bold uppercase tracking-wide mb-4" style={{ color: 'var(--text-muted)' }}>
-                    Result
-                  </h4>
-
-                  {contentError && (
-                    <div className="px-4 py-3 rounded-xl text-xs font-medium"
-                      style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}>
-                      {contentError}
-                    </div>
-                  )}
-
-                  {!contentError && !contentResult && (
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      Submit a title, URL, and enough page text to test the classifier.
-                    </p>
-                  )}
-
-                  {contentResult && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Decision</span>
-                        <span className="px-3 py-1 rounded-full text-xs font-bold"
-                          style={{
-                            background: contentResult.result === 'allow' ? 'var(--success-bg)' : contentResult.result === 'block' ? 'var(--danger-bg)' : 'var(--warning-bg)',
-                            color: contentResult.result === 'allow' ? 'var(--success)' : contentResult.result === 'block' ? 'var(--danger)' : 'var(--warning)',
-                          }}>
-                          {(contentResult.result || 'unknown').toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Label</span>
-                        <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {contentResult.label || 'pending'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Word Count</span>
-                        <span className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                          {contentResult.word_count ?? 0}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Keyword Hits</p>
-                        <div className="flex flex-wrap gap-2">
-                          {(contentResult.keyword_hits?.length ? contentResult.keyword_hits : ['none']).map((hit) => (
-                            <span key={hit} className="px-2 py-1 rounded-full text-[10px] font-semibold"
-                              style={{ background: 'var(--bg-card)', color: 'var(--text-muted)' }}>
-                              {hit}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>

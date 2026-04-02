@@ -1,0 +1,21 @@
+{
+  "hourly_completion": {
+    "22": [
+      1,
+      1
+    ]
+  },
+  "dow_completion": {
+    "6": [
+      1,
+      1
+    ]
+  },
+  "subject_performance": {
+    "mathematics": [
+      1,
+      1,
+      60.0
+    ]
+  }
+}

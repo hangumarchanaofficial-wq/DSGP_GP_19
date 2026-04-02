@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from adaptive_planner.planner_service import AdaptivePlanner, ProductivityProfiler, TrendAnalyzer; print\\(''OK''\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''e:/SDPPS/desktop_agent/api_server.py''\\).read\\(\\)\\); print\\(''api_server.py syntax OK''\\)\")",
+      "Bash(python -c \":*)"
+    ]
+  }
+}

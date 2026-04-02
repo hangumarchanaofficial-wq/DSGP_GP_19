@@ -11,12 +11,10 @@ SCALER_PATH = BASE_DIR / "distraction_prediction" / "data" / "processed" / "wind
 FEATURE_COLUMNS_PATH = BASE_DIR / "distraction_prediction" / "data" / "processed" / "windows" / "feature_columns.json"
 
 # ── Agent Settings ───────────────────────────────────────────────────────
-COLLECT_INTERVAL = 60           # seconds between snapshots
-DISTRACTION_THRESHOLD = 0.5     # probability above this = distracted
+COLLECT_INTERVAL = 60         
+DISTRACTION_THRESHOLD = 0.5     
 
-# ── Blending Mode ────────────────────────────────────────────────────────
-# "pure"   = Option A: 100% BiLSTM (model has app_category_score built in)
-# "light"  = Option B: 80% BiLSTM + 20% AppCategorizer
+
 
 BLEND_MODE = "adaptive"
 

@@ -5,7 +5,7 @@ import { useAgent } from '../hooks/useAgent';
 import { useTheme } from '../context/ThemeContext';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Cell, PieChart, Pie,
+  ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine,
 } from 'recharts';
 import { TrendingUp, TrendingDown, Clock, Zap, AlertTriangle } from 'lucide-react';
 
@@ -142,8 +142,24 @@ export default function Analytics() {
 
               {/* ── Full Timeline ──────────────── */}
               <div className="glass-card p-6 min-w-0">
-                <h3 className="text-sm font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Score Timeline</h3>
-                <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Final score, BiLSTM raw, and App Category across all snapshots</p>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Distraction Timeline</h3>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      Final distraction score across snapshots. Values above 50% are treated as distracted.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 lg:w-[280px]">
+                    <div className="rounded-xl px-3 py-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Avg BiLSTM</p>
+                      <p className="mt-1 text-base font-bold" style={{ color: 'var(--warning)' }}>{(stats.avgBilstm * 100).toFixed(0)}%</p>
+                    </div>
+                    <div className="rounded-xl px-3 py-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Avg Confidence</p>
+                      <p className="mt-1 text-base font-bold" style={{ color: 'var(--accent)' }}>{(stats.avgConf * 100).toFixed(0)}%</p>
+                    </div>
+                  </div>
+                </div>
                 <div style={{ height: 250 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={timeline} margin={{ top: 5, right: 10, left: -15, bottom: 0 }}>
@@ -153,12 +169,33 @@ export default function Analytics() {
                           <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <XAxis dataKey="idx" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
+                      <XAxis
+                        dataKey="idx"
+                        tick={{ fontSize: 10, fill: 'var(--text-muted)' }}
+                        axisLine={false}
+                        tickLine={false}
+                        minTickGap={28}
+                        tickFormatter={(value) => `${value}`}
+                      />
                       <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
                       <Tooltip content={<ChartTooltip />} />
-                      <Area type="monotone" dataKey="final" name="Final" stroke="var(--accent)" fill="url(#gFinal)" strokeWidth={2} dot={false} />
-                      <Area type="monotone" dataKey="bilstm" name="BiLSTM" stroke="var(--warning)" fill="none" strokeWidth={1.5} strokeDasharray="4 4" dot={false} />
-                      <Area type="monotone" dataKey="appcat" name="AppCat" stroke="var(--success)" fill="none" strokeWidth={1} strokeDasharray="2 4" dot={false} />
+                      <ReferenceLine
+                        y={50}
+                        stroke="var(--danger)"
+                        strokeDasharray="5 5"
+                        ifOverflow="extendDomain"
+                        label={{ value: 'Distracted threshold', fill: 'var(--text-muted)', fontSize: 10, position: 'insideTopRight' }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="final"
+                        name="Final distraction"
+                        stroke="var(--accent)"
+                        fill="url(#gFinal)"
+                        strokeWidth={2.5}
+                        dot={false}
+                        activeDot={{ r: 4, stroke: 'var(--accent)', strokeWidth: 2, fill: 'var(--bg-card)' }}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

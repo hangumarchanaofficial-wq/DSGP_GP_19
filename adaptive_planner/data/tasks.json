@@ -6,9 +6,9 @@
       "duration_minutes": 30,
       "priority": "high",
       "scheduled_slot": "09:00",
-      "status": "rescheduled",
+      "status": "active",
       "created_at": "2026-03-21 16:06:25",
-      "started_at": "2026-03-21 16:06:30",
+      "started_at": "2026-03-30 16:29:48",
       "completed_at": null,
       "rescheduled_from": "09:00",
       "rescheduled_to": "09:00",
@@ -23,9 +23,9 @@
       "duration_minutes": 30,
       "priority": "high",
       "scheduled_slot": "09:00",
-      "status": "rescheduled",
+      "status": "active",
       "created_at": "2026-03-22 08:44:22",
-      "started_at": "2026-03-22 08:44:27",
+      "started_at": "2026-03-30 15:41:43",
       "completed_at": null,
       "rescheduled_from": "09:00",
       "rescheduled_to": "09:00",
@@ -40,9 +40,26 @@
       "duration_minutes": 30,
       "priority": "high",
       "scheduled_slot": "09:00",
-      "status": "active",
+      "status": "rescheduled",
       "created_at": "2026-03-23 11:01:11",
       "started_at": "2026-03-23 11:01:13",
+      "completed_at": null,
+      "rescheduled_from": "09:00",
+      "rescheduled_to": "09:00",
+      "reschedule_reason": "extreme_distraction",
+      "distraction_events": 1,
+      "focus_score_avg": 0.8496,
+      "notes": ""
+    },
+    "task_6": {
+      "id": "task_6",
+      "subject": "Math ",
+      "duration_minutes": 45,
+      "priority": "medium",
+      "scheduled_slot": "09:00",
+      "status": "pending",
+      "created_at": "2026-03-30 16:29:47",
+      "started_at": null,
       "completed_at": null,
       "rescheduled_from": null,
       "rescheduled_to": null,
@@ -52,5 +69,5 @@
       "notes": ""
     }
   },
-  "next_id": 6
+  "next_id": 7
 }

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -15,9 +15,9 @@
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #94a3b8;
-  --accent: #6366f1;
-  --accent-light: #818cf8;
-  --accent-bg: rgba(99,102,241,0.08);
+  --accent: #7c3aed;
+  --accent-light: #8b5cf6;
+  --accent-bg: rgba(124,58,237,0.08);
   --success: #10b981;
   --success-bg: rgba(16,185,129,0.08);
   --danger: #ef4444;
@@ -30,18 +30,18 @@
 }
 
 .dark {
-  --bg-primary: #0c0e14;
-  --bg-card: #14161e;
-  --bg-sidebar: #101218;
-  --bg-elevated: #1a1d28;
-  --border: #1e2231;
-  --border-light: #1a1d28;
+  --bg-primary: #000000;
+  --bg-card: #050505;
+  --bg-sidebar: #000000;
+  --bg-elevated: #0b0b0b;
+  --border: #171717;
+  --border-light: #101010;
   --text-primary: #f1f5f9;
   --text-secondary: #94a3b8;
   --text-muted: #475569;
-  --accent: #818cf8;
-  --accent-light: #a5b4fc;
-  --accent-bg: rgba(129,140,248,0.1);
+  --accent: #a78bfa;
+  --accent-light: #c4b5fd;
+  --accent-bg: rgba(167,139,250,0.1);
   --success: #34d399;
   --success-bg: rgba(52,211,153,0.1);
   --danger: #f87171;
@@ -247,21 +247,21 @@ body {
 
 .planner-hero {
   background: linear-gradient(135deg,
-    rgba(99, 102, 241, 0.08),
+    rgba(124, 58, 237, 0.08),
     rgba(16, 185, 129, 0.04));
   border: 1px solid var(--border);
 }
 
 .planner-action {
   background: linear-gradient(135deg,
-    rgba(99, 102, 241, 0.92),
-    rgba(79, 70, 229, 0.85)) !important;
-  border: 1px solid rgba(129, 140, 248, 0.3) !important;
+    rgba(124, 58, 237, 0.92),
+    rgba(109, 40, 217, 0.85)) !important;
+  border: 1px solid rgba(167, 139, 250, 0.3) !important;
 }
 
 .planner-input:focus {
   border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 }
 
 /* ── Custom slider for planner ────────────────── */
@@ -304,4 +304,11 @@ body {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+}
+
+.brand-mark {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
 }
