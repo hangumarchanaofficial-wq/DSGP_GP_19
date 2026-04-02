@@ -13,8 +13,8 @@
       "rescheduled_from": "09:00",
       "rescheduled_to": "09:00",
       "reschedule_reason": "prolonged_distraction",
-      "distraction_events": 3,
-      "focus_score_avg": 0.3274,
+      "distraction_events": 4,
+      "focus_score_avg": 0.7315,
       "notes": ""
     },
     "task_4": {
@@ -40,9 +40,9 @@
       "duration_minutes": 30,
       "priority": "high",
       "scheduled_slot": "09:00",
-      "status": "rescheduled",
+      "status": "active",
       "created_at": "2026-03-23 11:01:11",
-      "started_at": "2026-03-23 11:01:13",
+      "started_at": "2026-04-02 22:59:18",
       "completed_at": null,
       "rescheduled_from": "09:00",
       "rescheduled_to": "09:00",
