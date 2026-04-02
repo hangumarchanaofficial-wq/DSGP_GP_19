@@ -61,6 +61,7 @@ def create_app(agent):
         snap_count = getattr(agent, 'snapshot_count', 0)
         window_size = agent.predictor.window_size if hasattr(agent, 'predictor') and agent.predictor else 10
         window_filled = snap_count >= window_size
+        snap = getattr(agent, 'latest_snapshot', None) or {}
 
         pred = getattr(agent, 'latest_prediction', None)
 
@@ -110,6 +111,11 @@ def create_app(agent):
             'window_size': window_size,
             'window_filled': window_filled,
             'blend_mode': 'adaptive',
+            'latest_snapshot': {
+                'current_app': snap.get('current_app', ''),
+                'current_title': snap.get('current_title', ''),
+                'app_category_score': snap.get('app_category_score', 0),
+            },
             'prediction': prediction_data,
             'blocker': blocker_info,
             'content_classifier': classifier_info,
@@ -198,7 +204,16 @@ def create_app(agent):
                 return jsonify({'error': f'Missing fields: {missing}'}), 400
             planner = get_planner()
             distraction_state = _get_distraction_state(agent)
-            result = planner.predict(data, distraction_state=distraction_state)
+            # Optional content_state from browser extension / frontend
+            content_state = data.pop('content_state', None)
+            # Also accept latest content state stored on agent (set by browser extension)
+            if content_state is None:
+                content_state = getattr(agent, 'latest_content_state', None)
+            result = planner.predict(
+                data,
+                distraction_state=distraction_state,
+                content_state=content_state,
+            )
             return jsonify(result)
         except Exception as e:
             traceback.print_exc()
@@ -260,7 +275,8 @@ def create_app(agent):
     def complete_task(task_id):
         try:
             planner = get_planner()
-            task = planner.task_manager.complete_task(task_id)
+            # Use planner wrapper so profiler + trend analyzer are updated
+            task = planner.complete_task(task_id)
             if not task:
                 return jsonify({'error': 'Task not found'}), 404
             return jsonify({'task': task, 'stats': planner.task_manager.get_stats()})
@@ -271,7 +287,8 @@ def create_app(agent):
     def miss_task(task_id):
         try:
             planner = get_planner()
-            task = planner.task_manager.miss_task(task_id)
+            # Use planner wrapper so profiler + trend analyzer are updated
+            task = planner.miss_task(task_id)
             if not task:
                 return jsonify({'error': 'Task not found'}), 404
             return jsonify({'task': task, 'stats': planner.task_manager.get_stats()})
@@ -287,6 +304,63 @@ def create_app(agent):
                 return jsonify({'error': 'Task not found'}), 404
             return jsonify({'deleted': True, 'stats': planner.task_manager.get_stats()})
         except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/analytics')
+    def planner_analytics():
+        try:
+            planner = get_planner()
+            return jsonify(planner.get_analytics())
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/smart-schedule')
+    def planner_smart_schedule():
+        try:
+            planner = get_planner()
+            return jsonify(planner.get_smart_schedule())
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/profile')
+    def planner_profile():
+        try:
+            planner = get_planner()
+            return jsonify(planner.profiler.get_profile_summary())
+        except Exception as e:
+            traceback.print_exc()
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/planner/content-check', methods=['POST'])
+    def planner_content_check():
+        """
+        Classify content (title/url/text) and store the result on the agent
+        so the next planner predict call can use it automatically.
+        """
+        try:
+            data = request.get_json() or {}
+            classifier = get_content_classifier()
+            content_result = classifier.classify(
+                title=data.get('title', ''),
+                url=data.get('url', ''),
+                content=data.get('content', ''),
+            )
+            # Store latest content state on agent for automatic pickup
+            agent.latest_content_state = content_result
+
+            # Also let the planner analyze it immediately
+            planner = get_planner()
+            context = planner.analyze_content_context(content_result)
+            return jsonify({
+                'classification': content_result,
+                'planner_context': context,
+            })
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 503
+        except Exception as e:
+            traceback.print_exc()
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/planner/distraction-check', methods=['GET'])

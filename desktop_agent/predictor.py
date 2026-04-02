@@ -75,13 +75,11 @@ class DistractionLSTM(nn.Module):
         return logits, weights
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  Predictor wrapper
-# ═══════════════════════════════════════════════════════════════════
+
 
 class Predictor:
     RECENCY_DECAY = 0.7
-    RECENCY_BLEND = 0.50          # ← raised from 0.40 to 0.50
+    RECENCY_BLEND = 0.50         
 
     def __init__(self):
         # ── Scaler ───────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, BarChart3, CalendarCheck, Settings,
-  LogOut, GraduationCap,
+  LogOut,
 } from 'lucide-react';
 
 const navItems = [
@@ -25,12 +25,8 @@ export default function Sidebar({ active }) {
       flexShrink: 0,
     }}>
       {/* Logo */}
-      <div className="px-5 py-6 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: 'var(--accent)' }}>
-          <GraduationCap className="w-5 h-5 text-white" />
-        </div>
-        <span className="text-base font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+      <div className="px-5 py-6">
+        <span className="brand-mark text-2xl" style={{ color: 'var(--text-primary)' }}>
           SDPPS
         </span>
       </div>

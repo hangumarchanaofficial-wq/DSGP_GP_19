@@ -1,4 +1,4 @@
-import { GraduationCap, Github, Linkedin, Mail, Heart, ExternalLink } from 'lucide-react';
+import { Github, Linkedin, Mail, Heart, ExternalLink } from 'lucide-react';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -12,11 +12,8 @@ export default function Footer() {
 
           {/* Brand */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--accent-bg)' }}>
-                <GraduationCap size={16} style={{ color: 'var(--accent)' }} />
-              </div>
-              <span className="text-[15px] font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
+            <div>
+              <span className="brand-mark text-[1.35rem]" style={{ color: 'var(--text-primary)' }}>
                 SDPPS
               </span>
             </div>
