@@ -1117,159 +1117,131 @@ export default function Planner() {
     <div
       className="flex min-h-screen"
       style={{
-        background: dark
-          ? "radial-gradient(circle at top left, rgba(99,102,241,0.12), transparent 22%), radial-gradient(circle at top right, rgba(16,185,129,0.08), transparent 20%), var(--bg-primary)"
-          : "radial-gradient(circle at top left, rgba(99,102,241,0.08), transparent 22%), radial-gradient(circle at top right, rgba(16,185,129,0.05), transparent 20%), var(--bg-primary)",
+        background: 'var(--bg-primary)'
       }}
     >
       <Sidebar active="Planner" />
 
       <main className="flex-1 flex flex-col min-h-screen overflow-y-auto">
         <header
-          className="sticky top-0 z-30 px-6 lg:px-8 py-4"
+          className="sticky top-0 z-30 px-6 lg:px-8 py-4 flex items-center justify-between"
           style={{
-            background: dark ? "rgba(8,10,18,0.78)" : "rgba(252,252,254,0.82)",
-            backdropFilter: "blur(24px)",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            background: dark ? "rgba(8,10,15,0.75)" : "rgba(250,251,253,0.8)",
+            backdropFilter: "blur(20px)",
+            borderBottom: "1px solid var(--border)",
+            zIndex: 40
           }}
         >
-          <div className="flex items-center justify-between max-w-[1440px] mx-auto gap-4">
-            <div>
-              <p
-                className="text-[10px] uppercase tracking-[0.3em] font-semibold mb-1"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Smart Planning
-              </p>
-              <h1
-                className="text-[28px] font-black tracking-tight"
-                style={{ color: "var(--text-primary)" }}
-              >
-                Planner
-              </h1>
-              <p
-                className="text-[12px] mt-1"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {new Date().toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-            </div>
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-[10px] uppercase tracking-[0.25em] font-bold mb-1"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Smart Planning
+            </p>
+            <h1
+              className="text-lg font-black tracking-tight leading-none mb-1"
+              style={{ color: "var(--text-primary)" }}
+            >
+              Planner
+            </h1>
+            <p
+              className="text-[11px] font-medium"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+          </div>
 
+          <div
+            className="hidden md:flex flex-col items-center justify-center px-6 py-2 rounded-2xl flex-shrink-0"
+            style={{
+              background: dark ? "rgba(255,255,255,0.03)" : "rgba(15,23,42,0.03)",
+              border: "1px solid var(--border)",
+              boxShadow: dark ? "inset 0 1px 0 rgba(255,255,255,0.05)" : "inset 0 1px 0 rgba(255,255,255,0.5)",
+            }}
+          >
+            <p
+              className="text-[9px] uppercase tracking-[0.2em] font-bold mb-0.5"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Current time
+            </p>
+            <p
+              className="text-xl font-black tracking-tighter"
+              style={{ color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}
+            >
+              {currentTime.toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+                second: "2-digit",
+              })}
+            </p>
+          </div>
+
+          <div className="flex-1 flex items-center justify-end gap-2.5">
             <div
-              className="hidden md:flex flex-col items-center justify-center px-5 py-2.5 rounded-[22px] min-w-[180px]"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all"
               style={{
-                background: dark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.72)",
-                border: "1px solid rgba(129,140,248,0.14)",
-                boxShadow: "0 10px 24px rgba(15,23,42,0.08)",
+                background: `var(--bg-card)`,
+                border: `1px solid var(--border)`,
               }}
             >
-              <p
-                className="text-[10px] uppercase tracking-[0.24em] font-semibold"
-                style={{ color: "var(--text-muted)" }}
-              >
-                Current time
-              </p>
-              <p
-                className="text-[20px] font-black tracking-tight"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {currentTime.toLocaleTimeString("en-US", {
-                  hour: "numeric",
-                  minute: "2-digit",
-                  second: "2-digit",
-                })}
-              </p>
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: statusTone,
+                  boxShadow: `0 0 8px ${statusTone}`,
+                  animation: "pulse 2s infinite",
+                }}
+              />
+              <span className="text-[11px] font-bold" style={{ color: statusTone }}>{statusLabel}</span>
+            </div>
+            
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl"
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <span className="text-[11px] font-bold" style={{ color: "#818cf8" }}>
+                {totalCount > 0
+                  ? `${completedCount}/${totalCount} completed`
+                  : "No tasks"}
+              </span>
             </div>
 
-            <div className="flex items-center gap-2.5 flex-wrap justify-end">
-              <div
-                className="flex items-center gap-2 px-3.5 py-2 rounded-full"
+            <button
+              onClick={() => {
+                if (notificationPermission !== "granted") {
+                  requestBrowserNotificationPermission();
+                }
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all hover:opacity-80"
+              style={{
+                background: "var(--bg-card)",
+                border: "1px solid var(--border)",
+                cursor: notificationPermission === "granted" ? "default" : "pointer",
+              }}
+            >
+              <span 
+                className="text-[11px] font-bold"
                 style={{
-                  background: `${statusTone}14`,
-                  color: statusTone,
-                  border: `1px solid ${statusTone}22`,
+                  color: notificationPermission === "granted" ? "#10b981" : notificationPermission === "denied" ? "#ef4444" : "#f59e0b"
                 }}
               >
-                <div
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{
-                    background: statusTone,
-                    animation: "pulse 2s infinite",
-                  }}
-                />
-                <span className="text-[11px] font-semibold">{statusLabel}</span>
-              </div>
-              {currentStreak > 0 && (
-                <div
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full"
-                  style={{
-                    background: "rgba(245,158,11,0.08)",
-                    color: "#f59e0b",
-                    border: "1px solid rgba(245,158,11,0.14)",
-                  }}
-                >
-                  <Flame className="w-3 h-3" />
-                  <span className="text-[11px] font-semibold">
-                    {currentStreak} day streak
-                  </span>
-                </div>
-              )}
-              <div
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full"
-                style={{
-                  background: "rgba(99,102,241,0.08)",
-                  color: "#818cf8",
-                  border: "1px solid rgba(99,102,241,0.14)",
-                }}
-                >
-                  <span className="text-[11px] font-semibold">
-                    {totalCount > 0
-                      ? `${completedCount}/${totalCount} completed`
-                      : "No tasks yet"}
-                  </span>
-                </div>
-              <div
-                onClick={() => {
-                  if (notificationPermission !== "granted") {
-                    requestBrowserNotificationPermission();
-                  }
-                }}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full"
-                style={{
-                  background:
-                    notificationPermission === "granted"
-                      ? "rgba(16,185,129,0.08)"
-                      : notificationPermission === "denied"
-                        ? "rgba(239,68,68,0.08)"
-                        : "rgba(245,158,11,0.08)",
-                  color:
-                    notificationPermission === "granted"
-                      ? "#10b981"
-                      : notificationPermission === "denied"
-                        ? "#ef4444"
-                        : "#f59e0b",
-                  border:
-                    notificationPermission === "granted"
-                      ? "1px solid rgba(16,185,129,0.14)"
-                      : notificationPermission === "denied"
-                        ? "1px solid rgba(239,68,68,0.14)"
-                        : "1px solid rgba(245,158,11,0.14)",
-                  cursor: notificationPermission === "granted" ? "default" : "pointer",
-                }}
-              >
-                <span className="text-[11px] font-semibold">
-                  {notificationPermission === "granted"
-                    ? "Notifications on"
-                    : notificationPermission === "denied"
-                      ? "Notifications blocked"
-                      : "Enable notifications"}
-                </span>
-              </div>
-            </div>
+                {notificationPermission === "granted"
+                  ? "Notifications on"
+                  : notificationPermission === "denied"
+                    ? "Notifications blocked"
+                    : "Enable notifications"}
+              </span>
+            </button>
           </div>
         </header>
 
@@ -1287,7 +1259,7 @@ export default function Planner() {
                 style={{ color: "#a855f7" }}
               />
               <p
-                className="text-[12px] flex-1"
+                className="text-xs flex-1"
                 style={{ color: "var(--text-secondary)" }}
               >
                 <strong style={{ color: "#a855f7" }}>Auto-rescheduled</strong> "
@@ -1308,50 +1280,45 @@ export default function Planner() {
         )}
 
         <div className="flex-1 px-6 lg:px-8 py-6 max-w-[1440px] mx-auto w-full">
-          <section className="planner-hero rounded-[32px] p-5 lg:p-6 mb-6">
+          <section className="glass-card p-6 lg:p-8 mb-6 relative overflow-hidden">
             <div className="grid grid-cols-1 lg:grid-cols-[1.35fr,0.9fr] gap-5 items-start">
               <div>
                 <div
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-3"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-3 shadow-sm"
                   style={{
-                    background: "rgba(129,140,248,0.1)",
+                    background: "var(--accent-bg)",
                     color: "var(--accent)",
-                    border: "1px solid rgba(129,140,248,0.18)",
+                    border: "1px solid rgba(124, 58, 237, 0.15)",
                   }}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span className="text-[11px] font-semibold">
-                    Adaptive study planning
+                    AI Insights & Planning
                   </span>
                 </div>
                 <h2
-                  className="text-[18px] lg:text-[22px] font-black leading-tight max-w-[620px]"
+                  className="text-2xl font-black leading-tight max-w-[620px] mb-2"
                   style={{ color: "var(--text-primary)" }}
                 >
-                  Build a sharper day with cleaner scheduling, fewer
-                  distractions, and clearer execution.
+                  {currentTime.getHours() < 12 ? "Good morning! Ready for a productive day?" : currentTime.getHours() < 18 ? "Good afternoon! Keep the momentum going." : "Good evening! Let's finish today strong."}
                 </h2>
                 <p
-                  className="text-[12px] mt-2 max-w-[620px] leading-relaxed"
+                  className="text-sm max-w-[500px] leading-relaxed font-medium"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  1. Add your sleep hours in the sleep log.
-                  <br />
-                  2. Add your study tasks before you start the day.
-                  <br />
-                  3. Start a study task timer when you begin studying.
-                  <br />
-                  4. Use the social media timer only when you are actually using social media.
+                  {currentStreak > 0
+                    ? `You're riding a solid ${currentStreak}-day focus streak. Your system is primed—log your tasks, manage distractions, and add to your score.`
+                    : `Your workspace is clear. Outline your tasks, secure your focus hours, and start building your productivity streak today.`}
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 lg:gap-3">
                 {[
                   {
                     label: "Total study time",
                     value: formatCompactStudyDuration(todayStudySeconds),
                     icon: Brain,
-                    tone: "#818cf8",
+                    tone: "#8b5cf6",
                   },
                   {
                     label: "Social time",
@@ -1363,27 +1330,26 @@ export default function Planner() {
                     label: "Sleep time",
                     value: dailySleepLabel,
                     icon: Coffee,
-                    tone: "#38bdf8",
+                    tone: "#06b6d4",
                   },
                 ].map(({ label, value, icon: Icon, tone }) => (
-                  <div key={label} className="rounded-[24px] p-4 planner-stat">
-                    <div
-                      className="w-8 h-8 rounded-2xl flex items-center justify-center mb-3"
-                      style={{ background: `${tone}14`, color: tone }}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
+                  <div key={label} className="glass-card p-5 flex flex-col justify-between transition-all hover:-translate-y-1 hover:shadow-lg">
+                    <div className="flex items-center gap-3 mb-3">
+                      <div
+                        className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ background: `${tone}18`, color: tone }}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                        {label}
+                      </span>
                     </div>
                     <div
-                      className="text-[16px] lg:text-[18px] font-black tracking-tight"
+                      className="text-xl font-black tracking-tighter"
                       style={{ color: "var(--text-primary)" }}
                     >
                       {value}
-                    </div>
-                    <div
-                      className="text-[10px] mt-1"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      {label}
                     </div>
                   </div>
                 ))}
@@ -1392,30 +1358,39 @@ export default function Planner() {
           </section>
 
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <section className="rounded-[28px] p-5 planner-card planner-subtle">
-              <div className="flex items-start justify-between gap-3 mb-4">
+            <section className="glass-card flex flex-col h-full p-6 transition-all hover:shadow-lg relative overflow-hidden group">
+              {/* Subtle background glow when running */}
+              <div 
+                className={`absolute inset-0 opacity-0 transition-opacity duration-1000 pointer-events-none ${socialTimerRunning ? 'opacity-100' : ''}`}
+                style={{
+                  background: "radial-gradient(circle at center 30%, rgba(239,68,68,0.05) 0%, transparent 70%)"
+                }}
+              />
+              
+              <div className="flex items-start justify-between gap-3 mb-5 relative z-10">
                 <div>
                   <p
-                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                    className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Social Timer
                   </p>
                   <h2
-                    className="text-[16px] font-semibold tracking-tight"
+                    className="text-sm font-bold"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    Today&apos;s Social Media Time: {dailySocialLabel}
+                    Today&apos;s Time: {dailySocialLabel}
                   </h2>
                 </div>
                 <div
-                  className="px-3 py-1.5 rounded-full text-[10px] font-semibold"
+                  className="px-3 py-1.5 rounded-full text-[10px] font-bold transition-all"
                   style={{
-                    background: socialTimerRunning ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)",
+                    background: socialTimerRunning ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.1)",
                     color: socialTimerRunning ? "#ef4444" : "#10b981",
                     border: socialTimerRunning
-                      ? "1px solid rgba(239,68,68,0.18)"
-                      : "1px solid rgba(16,185,129,0.18)",
+                      ? "1px solid rgba(239,68,68,0.3)"
+                      : "1px solid rgba(16,185,129,0.2)",
+                    boxShadow: socialTimerRunning ? "0 0 12px rgba(239,68,68,0.2)" : "none"
                   }}
                 >
                   {socialTimerRunning ? "Running" : "Stopped"}
@@ -1423,88 +1398,104 @@ export default function Planner() {
               </div>
 
               <div
-                className="rounded-[22px] p-4 mb-4 text-center"
+                className="rounded-2xl p-5 mb-5 text-center transition-all flex flex-col items-center justify-center relative z-10 flex-1"
                 style={{
-                  background: "rgba(245,158,11,0.08)",
-                  border: "1px solid rgba(245,158,11,0.14)",
+                  background: "rgba(15,23,42,0.2)",
+                  border: "1px solid rgba(245,158,11,0.1)",
+                  boxShadow: "inset 0 2px 10px rgba(0,0,0,0.2), 0 1px 0 rgba(255,255,255,0.02)",
                 }}
               >
-                <p
-                  className="text-[24px] font-black tracking-tight"
-                  style={{ color: "var(--text-primary)" }}
+                <div 
+                  className={`text-4xl font-black tracking-tighter transition-all ${socialTimerRunning ? 'scale-105' : ''}`}
+                  style={{ 
+                    color: socialTimerRunning ? "#ef4444" : "var(--text-primary)", 
+                    fontVariantNumeric: "tabular-nums",
+                    textShadow: socialTimerRunning ? "0 0 20px rgba(239,68,68,0.4)" : "none"
+                  }}
                 >
                   {liveSocialTimerLabel}
-                </p>
+                </div>
                 <p
-                  className="text-[11px] mt-1"
+                  className="text-[10px] mt-2 font-medium"
                   style={{ color: "var(--text-muted)" }}
                 >
                   {socialTimerRunning
-                    ? "Tracking the current social media session live."
-                    : `Stored locally as ${getSocialStorageKey(sleepDateKey)}`}
+                    ? "Tracking session live..."
+                    : `Saved: ${getSocialStorageKey(sleepDateKey)}`}
                 </p>
               </div>
 
-              <button
-                onClick={socialTimerRunning ? stopSocialTimer : startSocialTimer}
-                className="w-full py-3 rounded-2xl text-[12px] font-semibold text-white"
-                style={{
-                  background: socialTimerRunning
-                    ? "linear-gradient(135deg, rgba(239,68,68,0.95), rgba(220,38,38,0.78))"
-                    : "linear-gradient(135deg, rgba(245,158,11,0.95), rgba(217,119,6,0.82))",
-                  boxShadow: socialTimerRunning
-                    ? "0 14px 28px rgba(239,68,68,0.18)"
-                    : "0 14px 28px rgba(245,158,11,0.18)",
-                }}
-              >
-                {socialTimerRunning ? "Stop Social Media Timer" : "Start Social Media Timer"}
-              </button>
+              <div className="relative z-10 w-full">
+                <button
+                  onClick={socialTimerRunning ? stopSocialTimer : startSocialTimer}
+                  className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98] relative overflow-hidden flex items-center justify-center gap-2"
+                  style={{
+                    background: socialTimerRunning
+                      ? "linear-gradient(to right, rgba(239,68,68,0.2), rgba(220,38,38,0.15))"
+                      : "linear-gradient(to right, #f59e0b, #d97706)",
+                    border: socialTimerRunning ? "1px solid rgba(239,68,68,0.4)" : "1px solid transparent",
+                    color: socialTimerRunning ? "#ef4444" : "#ffffff",
+                    boxShadow: socialTimerRunning
+                      ? "none"
+                      : "0 4px 14px rgba(245,158,11,0.2)",
+                  }}
+                >
+                  <span className="tracking-wide">
+                    {socialTimerRunning ? "Stop Timer" : "Start Social Timer"}
+                  </span>
+                </button>
 
-              <p
-                className="text-[10px] mt-3"
-                style={{ color: socialLimitExceeded ? "#ef4444" : "var(--text-muted)" }}
-              >
-                {socialLimitExceeded
-                  ? "Warning: social media usage has exceeded 2 hours today."
-                  : "Only one social media timer can run at a time, and it auto-stops when a study task starts."}
-              </p>
+                <p
+                  className="text-[10px] font-medium leading-relaxed mt-4 text-center px-2"
+                  style={{ color: socialLimitExceeded ? "#ef4444" : "var(--text-muted)" }}
+                >
+                  {socialLimitExceeded
+                    ? "Warning: Daily social media limit exceeded."
+                    : "Auto-stops when a study task begins."}
+                </p>
+              </div>
             </section>
 
-            <section className="rounded-[28px] p-5 planner-card">
+            <section className="glass-card flex flex-col h-full p-6 transition-all hover:shadow-lg">
               <button
                 onClick={() => setProfileOpen(!profileOpen)}
-                className="w-full flex items-center justify-between mb-4"
+                className="w-full flex items-center justify-between mb-4 group"
               >
-                <div>
+                <div className="text-left">
                   <p
-                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                    className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Inputs
                   </p>
                   <h2
-                    className="text-[16px] font-semibold tracking-tight"
+                    className="text-sm font-bold"
                     style={{ color: "var(--text-primary)" }}
                   >
                     Student Profile
                   </h2>
                 </div>
-                <ChevronDown
-                  className={`w-4 h-4 transition-transform ${profileOpen ? "rotate-180" : ""}`}
-                  style={{ color: "var(--text-muted)" }}
-                />
+                <div 
+                  className="w-8 h-8 rounded-full flex items-center justify-center transition-colors group-hover:bg-[rgba(255,255,255,0.05)]"
+                >
+                  <ChevronDown
+                    className={`w-4 h-4 transition-transform ${profileOpen ? "rotate-180" : ""}`}
+                    style={{ color: "var(--text-muted)" }}
+                  />
+                </div>
               </button>
 
-              {profileOpen && (
-                <div className="space-y-4 pb-1">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label
-                        className="text-[10px] font-medium block mb-1.5"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        Age
-                      </label>
+              <div className={`space-y-6 transition-all duration-300 overflow-hidden ${profileOpen ? 'opacity-100 max-h-[500px]' : 'opacity-0 max-h-0'}`}>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Age Input */}
+                  <div>
+                    <label
+                      className="text-[10px] uppercase tracking-wider font-bold block mb-2"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Age
+                    </label>
+                    <div className="relative group">
                       <input
                         type="number"
                         min={14}
@@ -1513,49 +1504,54 @@ export default function Planner() {
                         onChange={(e) =>
                           update("age", parseInt(e.target.value, 10) || 18)
                         }
-                        className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                        className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
                         style={{
                           background: "var(--bg-elevated)",
                           color: "var(--text-primary)",
                           border: "1px solid var(--border)",
+                          boxShadow: "inset 0 2px 4px rgba(0,0,0,0.05)",
                         }}
                       />
                     </div>
-                    <div>
-                      <label
-                        className="text-[10px] font-medium block mb-1.5"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        Gender
-                      </label>
-                      <div className="flex gap-1.5">
-                        {["Male", "Female"].map((g) => (
-                          <button
-                            key={g}
-                            onClick={() => update("gender", g)}
-                            className="flex-1 py-3 rounded-2xl text-[11px] font-semibold transition-all"
-                            style={{
-                              background:
-                                form.gender === g
-                                  ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.74))"
-                                  : "var(--bg-elevated)",
-                              color:
-                                form.gender === g
-                                  ? "#fff"
-                                  : "var(--text-muted)",
-                              boxShadow:
-                                form.gender === g
-                                  ? "0 12px 24px rgba(99,102,241,0.2)"
-                                  : "none",
-                            }}
-                          >
-                            {g}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                   </div>
 
+                  {/* Gender Toggle */}
+                  <div>
+                    <label
+                      className="text-[10px] uppercase tracking-wider font-bold block mb-2"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Gender
+                    </label>
+                    <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
+                      {["Male", "Female"].map((g) => (
+                        <button
+                          key={g}
+                          onClick={() => update("gender", g)}
+                          className="flex-1 py-2 rounded-lg text-[11px] font-bold transition-all"
+                          style={{
+                            background:
+                              form.gender === g
+                                ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.85))"
+                                : "transparent",
+                            color:
+                              form.gender === g
+                                ? "#fff"
+                                : "var(--text-muted)",
+                            boxShadow:
+                              form.gender === g
+                                ? "0 4px 12px rgba(99,102,241,0.25)"
+                                : "none",
+                          }}
+                        >
+                          {g}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-5 pt-2">
                   {[
                     {
                       key: "study_hours_per_day",
@@ -1563,7 +1559,8 @@ export default function Planner() {
                       min: 0,
                       max: 12,
                       step: 0.5,
-                      color: "#818cf8",
+                      color: "#8b5cf6",
+                      ticks: [0, 3, 6, 9, 12],
                     },
                     {
                       key: "sleep_hours",
@@ -1571,7 +1568,8 @@ export default function Planner() {
                       min: 0,
                       max: 12,
                       step: 0.5,
-                      color: "#38bdf8",
+                      color: "#06b6d4",
+                      ticks: [0, 3, 6, 9, 12],
                     },
                     {
                       key: "total_social_hours",
@@ -1580,112 +1578,136 @@ export default function Planner() {
                       max: 5,
                       step: 0.1,
                       color: "#f59e0b",
+                      ticks: [0, 1, 2, 3, 4, 5],
                     },
-                  ].map(({ key, label, min, max, step, color }) => (
-                    <div key={key}>
-                      <div className="flex justify-between mb-2">
+                  ].map(({ key, label, min, max, step, color, ticks }) => (
+                    <div key={key} className="group pb-2">
+                      <div className="flex justify-between items-center mb-3">
                         <label
-                          className="text-[10px] font-medium"
+                          className="text-[10px] uppercase tracking-wider font-bold transition-colors group-hover:text-[var(--text-secondary)]"
                           style={{ color: "var(--text-muted)" }}
                         >
                           {label}
                         </label>
                         <span
-                          className="text-[12px] font-bold"
+                          className="text-sm font-black tracking-tight"
                           style={{ color }}
                         >
                           {form[key]}h
                         </span>
                       </div>
-                      <input
-                        type="range"
-                        min={min}
-                        max={max}
-                        step={step}
-                        value={form[key]}
-                        onChange={(e) =>
-                          update(key, parseFloat(e.target.value))
-                        }
-                        className="slider-input w-full"
-                        style={{
-                          "--slider-color": color,
-                          "--slider-fill": `${getSliderFillPercentage(form[key], min, max)}%`,
-                        }}
-                      />
+                      <div className="relative w-full h-[6px] rounded-full" style={{ background: "rgba(255,255,255,0.05)" }}>
+                        <div 
+                           className="absolute top-0 left-0 h-full rounded-full transition-all duration-300 pointer-events-none"
+                           style={{ 
+                             width: `${getSliderFillPercentage(form[key], min, max)}%`,
+                             background: color,
+                             boxShadow: `0 0 10px ${color}80`
+                           }}
+                        />
+                        <input
+                          type="range"
+                          min={min}
+                          max={max}
+                          step={step}
+                          value={form[key]}
+                          onChange={(e) =>
+                            update(key, parseFloat(e.target.value))
+                          }
+                          className="absolute inset-0 w-full opacity-0 cursor-pointer"
+                        />
+                      </div>
+                      <div className="relative w-full mt-2 h-4">
+                        {ticks.map((tick) => (
+                          <div 
+                            key={tick}
+                            className="absolute flex flex-col items-center -ml-2 w-4"
+                            style={{ left: `${((tick - min) / (max - min)) * 100}%` }}
+                          >
+                            <div className="w-[1px] h-1.5 mb-0.5" style={{ background: "var(--border)" }}></div>
+                            <span className="text-[8px] font-semibold" style={{ color: "var(--text-muted)" }}>{tick}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </section>
 
-            <section className="rounded-[28px] p-5 planner-card planner-subtle">
-              <div className="flex items-start justify-between gap-3 mb-4">
+            <section className="glass-card flex flex-col h-full p-6 transition-all hover:shadow-lg relative overflow-hidden">
+              <div className="flex items-start justify-between gap-3 mb-5">
                 <div>
                   <p
-                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
+                    className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Sleep Log
                   </p>
                   <h2
-                    className="text-[16px] font-semibold tracking-tight"
+                    className="text-sm font-bold"
                     style={{ color: "var(--text-primary)" }}
                   >
                     How long did you sleep today?
                   </h2>
                 </div>
-                <div className="text-right">
+                <div className="text-right flex flex-col items-end">
                   <p
-                    className="text-[10px] uppercase tracking-[0.24em] font-semibold"
+                    className="text-[9px] uppercase tracking-[0.2em] font-bold"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Total today
                   </p>
                   <p
-                    className="text-[20px] font-black tracking-tight"
-                    style={{ color: "#38bdf8" }}
+                    className="text-2xl font-black tracking-tighter"
+                    style={{ color: "#06b6d4" }}
                   >
                     {dailySleepLabel}
                   </p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-2 gap-3 mb-6">
+                {/* Last Night Stat */}
                 <div
-                  className="rounded-[18px] px-4 py-3"
+                  className="rounded-xl px-4 py-3 flex flex-col justify-center"
                   style={{
-                    background: "rgba(56,189,248,0.08)",
-                    border: "1px solid rgba(56,189,248,0.16)",
+                    background: "rgba(15,23,42,0.2)",
+                    border: "1px solid rgba(6,182,212,0.1)",
+                    boxShadow: "inset 0 2px 10px rgba(0,0,0,0.1)",
                   }}
                 >
                   <p
-                    className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
+                    className="text-[9px] uppercase tracking-[0.2em] font-bold mb-1"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Last night
                   </p>
                   <p
-                    className="text-[16px] font-bold"
+                    className="text-sm font-black"
                     style={{ color: "var(--text-primary)" }}
                   >
                     {initialSleepMinutes > 0 ? initialSleepLabel : "Not added yet"}
                   </p>
                 </div>
+
+                {/* Additional Sleep Stat */}
                 <div
-                  className="rounded-[18px] px-4 py-3"
+                  className="rounded-xl px-4 py-3 flex flex-col justify-center"
                   style={{
-                    background: "rgba(16,185,129,0.08)",
-                    border: "1px solid rgba(16,185,129,0.16)",
+                    background: "rgba(15,23,42,0.2)",
+                    border: "1px solid rgba(16,185,129,0.1)",
+                    boxShadow: "inset 0 2px 10px rgba(0,0,0,0.1)",
                   }}
                 >
                   <p
-                    className="text-[10px] uppercase tracking-[0.2em] font-semibold mb-1"
+                    className="text-[9px] uppercase tracking-[0.2em] font-bold mb-1"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Additional sleep
                   </p>
                   <p
-                    className="text-[16px] font-bold"
+                    className="text-sm font-black"
                     style={{ color: "var(--text-primary)" }}
                   >
                     {additionalSleepMinutes > 0 ? additionalSleepLabel : "0m"}
@@ -1695,22 +1717,22 @@ export default function Planner() {
 
               {showInitialSleepPrompt && (
                 <div
-                  className="rounded-[22px] p-4 mb-4"
+                  className="rounded-2xl p-5 mb-5 relative overflow-hidden"
                   style={{
-                    background: "rgba(56,189,248,0.08)",
-                    border: "1px solid rgba(56,189,248,0.18)",
+                    background: "rgba(6,182,212,0.03)",
+                    border: "1px solid rgba(6,182,212,0.15)",
                   }}
                 >
                   <p
-                    className="text-[12px] font-semibold mb-3"
+                    className="text-xs font-bold mb-4"
                     style={{ color: "var(--text-primary)" }}
                   >
                     How many hours did you sleep last night?
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <label
-                        className="text-[10px] font-medium block mb-1.5"
+                        className="text-[10px] uppercase tracking-wider font-bold block mb-2"
                         style={{ color: "var(--text-muted)" }}
                       >
                         Hours
@@ -1723,17 +1745,18 @@ export default function Planner() {
                         onChange={(e) =>
                           updateSleepField("hours", e.target.value, setInitialSleepInput)
                         }
-                        className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                        className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
                         style={{
                           background: "var(--bg-elevated)",
                           color: "var(--text-primary)",
                           border: "1px solid var(--border)",
+                          boxShadow: "inset 0 2px 4px rgba(0,0,0,0.05)",
                         }}
                       />
                     </div>
                     <div>
                       <label
-                        className="text-[10px] font-medium block mb-1.5"
+                        className="text-[10px] uppercase tracking-wider font-bold block mb-2"
                         style={{ color: "var(--text-muted)" }}
                       >
                         Minutes
@@ -1746,22 +1769,22 @@ export default function Planner() {
                         onChange={(e) =>
                           updateSleepField("minutes", e.target.value, setInitialSleepInput)
                         }
-                        className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
+                        className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
                         style={{
                           background: "var(--bg-elevated)",
                           color: "var(--text-primary)",
                           border: "1px solid var(--border)",
+                          boxShadow: "inset 0 2px 4px rgba(0,0,0,0.05)",
                         }}
                       />
                     </div>
                   </div>
                   <button
                     onClick={handleInitialSleepSubmit}
-                    className="w-full mt-3 py-3 rounded-2xl text-[12px] font-semibold text-white"
+                    className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98]"
                     style={{
-                      background:
-                        "linear-gradient(135deg, rgba(56,189,248,0.95), rgba(14,165,233,0.78))",
-                      boxShadow: "0 14px 28px rgba(14,165,233,0.18)",
+                      background: "linear-gradient(to right, #0ea5e9, #0284c7)",
+                      boxShadow: "0 4px 14px rgba(14,165,233,0.25)",
                     }}
                   >
                     Save Last Night&apos;s Sleep
@@ -1769,71 +1792,76 @@ export default function Planner() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label
-                    className="text-[10px] font-medium block mb-1.5"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Hours
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={24}
-                    value={sleepInput.hours}
-                    onChange={(e) =>
-                      updateSleepField("hours", e.target.value, setSleepInput)
-                    }
-                    className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
-                    style={{
-                      background: "var(--bg-elevated)",
-                      color: "var(--text-primary)",
-                      border: "1px solid var(--border)",
-                    }}
-                  />
+              <div className="mt-auto">
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label
+                      className="text-[10px] uppercase tracking-wider font-bold block mb-2"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Hours
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={24}
+                      value={sleepInput.hours}
+                      onChange={(e) =>
+                        updateSleepField("hours", e.target.value, setSleepInput)
+                      }
+                      className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
+                      style={{
+                        background: "var(--bg-elevated)",
+                        color: "var(--text-primary)",
+                        border: "1px solid var(--border)",
+                        boxShadow: "inset 0 2px 4px rgba(0,0,0,0.05)",
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="text-[10px] uppercase tracking-wider font-bold block mb-2"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      Minutes
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={sleepInput.minutes}
+                      onChange={(e) =>
+                        updateSleepField("minutes", e.target.value, setSleepInput)
+                      }
+                      className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
+                      style={{
+                        background: "var(--bg-elevated)",
+                        color: "var(--text-primary)",
+                        border: "1px solid var(--border)",
+                        boxShadow: "inset 0 2px 4px rgba(0,0,0,0.05)",
+                      }}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label
-                    className="text-[10px] font-medium block mb-1.5"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Minutes
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={59}
-                    value={sleepInput.minutes}
-                    onChange={(e) =>
-                      updateSleepField("minutes", e.target.value, setSleepInput)
-                    }
-                    className="w-full px-3 py-3 rounded-2xl text-[13px] font-medium outline-none transition-all planner-input"
-                    style={{
-                      background: "var(--bg-elevated)",
-                      color: "var(--text-primary)",
-                      border: "1px solid var(--border)",
-                    }}
-                  />
-                </div>
+
+                <button
+                  onClick={handleSleepAdd}
+                  className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98]"
+                  style={{
+                    background: "linear-gradient(to right, #10b981, #059669)",
+                    boxShadow: "0 4px 14px rgba(16,185,129,0.25)",
+                  }}
+                >
+                  Add Additional Sleep Time
+                </button>
+                
+                <p
+                  className="text-[10px] font-medium leading-relaxed mt-4 text-center px-2"
+                  style={{ color: sleepError ? "#ef4444" : "var(--text-muted)" }}
+                >
+                  {sleepError || `Logs sync locally under ${getSleepStorageKey(sleepDateKey)}`}
+                </p>
               </div>
-              <button
-                onClick={handleSleepAdd}
-                className="w-full mt-3 py-3 rounded-2xl text-[12px] font-semibold text-white"
-                style={{
-                  background:
-                    "linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.82))",
-                  boxShadow: "0 14px 28px rgba(16,185,129,0.18)",
-                }}
-              >
-                Add Additional Sleep Time
-              </button>
-              <p
-                className="text-[10px] mt-3"
-                style={{ color: sleepError ? "#ef4444" : "var(--text-muted)" }}
-              >
-                {sleepError || `Stored locally as ${getSleepStorageKey(sleepDateKey)}`}
-              </p>
             </section>
           </section>
 
@@ -1854,20 +1882,7 @@ export default function Planner() {
             </div>
 
             <div className="col-span-12 lg:col-span-5 space-y-6">
-              {error && (
-                <div
-                  className="p-3.5 rounded-2xl text-[12px] font-medium flex items-center gap-2 planner-card"
-                  style={{
-                    background: "rgba(239,68,68,0.06)",
-                    color: "#ef4444",
-                    border: "1px solid rgba(239,68,68,0.12)",
-                  }}
-                >
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
-                </div>
-              )}
-
-              <section className="rounded-[30px] p-5 lg:p-6 planner-card">
+              <section className="glass-card h-full p-6 flex flex-col">
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <p
@@ -1877,7 +1892,7 @@ export default function Planner() {
                       Queue
                     </p>
                     <h2
-                      className="text-[18px] font-semibold tracking-tight"
+                      className="text-sm font-bold"
                       style={{ color: "var(--text-primary)" }}
                     >
                       Tasks{" "}
@@ -1895,40 +1910,38 @@ export default function Planner() {
                   </div>
                   <button
                     onClick={() => setShowAddTask(!showAddTask)}
-                    className="px-4 h-10 rounded-2xl flex items-center justify-center transition-all text-[12px] font-semibold"
+                    className="px-5 h-10 rounded-xl flex items-center justify-center transition-all text-xs font-bold transform active:scale-95"
                     style={{
                       background: showAddTask
-                        ? "rgba(239,68,68,0.1)"
-                        : "linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.82))",
+                        ? "rgba(239,68,68,0.15)"
+                        : "linear-gradient(to right, #10b981, #059669)",
                       color: showAddTask ? "#ef4444" : "#ffffff",
                       border: showAddTask
-                        ? "1px solid rgba(239,68,68,0.18)"
-                        : "1px solid rgba(16,185,129,0.2)",
+                        ? "1px solid rgba(239,68,68,0.3)"
+                        : "1px solid transparent",
                       boxShadow: showAddTask
                         ? "none"
-                        : "0 12px 24px rgba(16,185,129,0.2)",
+                        : "0 4px 12px rgba(16,185,129,0.3)",
                     }}
                   >
-                    {showAddTask ? "Close" : "Add Task"}
+                    {showAddTask ? "Close Loader" : "Add Task"}
                   </button>
                 </div>
 
-                <div className="flex gap-2 mb-5 flex-wrap">
+                <div className="flex gap-2 mb-6 flex-wrap p-1 rounded-2xl" style={{ background: "rgba(15,23,42,0.2)", border: "1px solid var(--border)", width: "fit-content" }}>
                   {["all", "active", "completed", "missed"].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
-                      className="px-3.5 py-2 rounded-full text-[11px] font-semibold capitalize transition-all"
+                      className="px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all"
                       style={{
                         color: activeTab === tab ? "#fff" : "var(--text-muted)",
                         background:
                           activeTab === tab
-                            ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.75))"
+                            ? "linear-gradient(to right, #8b5cf6, #6366f1)"
                             : "transparent",
-                        border:
-                          activeTab === tab
-                            ? "1px solid rgba(129,140,248,0.18)"
-                            : "1px solid var(--border)",
+                        border: "1px solid transparent",
+                        boxShadow: activeTab === tab ? "0 4px 12px rgba(139,92,246,0.3)" : "none"
                       }}
                     >
                       {tab}
@@ -1948,7 +1961,7 @@ export default function Planner() {
                         setNewTask((t) => ({ ...t, subject: e.target.value }))
                       }
                       onKeyDown={(e) => e.key === "Enter" && handleAddTask()}
-                      className="w-full px-0 py-2 text-[15px] font-medium outline-none bg-transparent placeholder:text-[var(--text-muted)]"
+                      className="w-full px-0 py-2 text-sm font-medium outline-none bg-transparent placeholder:text-[var(--text-muted)]"
                       style={{
                         color: "var(--text-primary)",
                         borderBottom: "1px solid var(--border)",
@@ -1976,7 +1989,7 @@ export default function Planner() {
               duration_minutes: d,
             }))
           }
-          className="flex-1 py-3 rounded-2xl text-[12px] font-semibold transition-all"
+          className="flex-1 py-3 rounded-2xl text-xs font-semibold transition-all"
           style={{
             background:
               newTask.duration_minutes === d
@@ -2018,7 +2031,7 @@ export default function Planner() {
             start_hour: e.target.value,
           }))
         }
-        className="w-[110px] px-4 py-3 rounded-2xl text-[15px] font-semibold outline-none text-center"
+        className="w-[110px] px-4 py-3 rounded-2xl text-sm font-semibold outline-none text-center"
         style={{
           background: "var(--bg-secondary)",
           color: "#ffffff",
@@ -2046,7 +2059,7 @@ export default function Planner() {
             start_minute: e.target.value,
           }))
         }
-        className="w-[110px] px-4 py-3 rounded-2xl text-[15px] font-semibold outline-none text-center"
+        className="w-[110px] px-4 py-3 rounded-2xl text-sm font-semibold outline-none text-center"
         style={{
           background: "var(--bg-secondary)",
           color: "#ffffff",
@@ -2073,7 +2086,7 @@ export default function Planner() {
                 start_meridiem: m,
               }))
             }
-            className="px-4 py-3 rounded-2xl text-[13px] font-semibold transition-all"
+            className="px-4 py-3 rounded-2xl text-xs font-semibold transition-all"
             style={{
               background:
                 newTask.start_meridiem === m
@@ -2130,7 +2143,7 @@ export default function Planner() {
                   {filteredTasks.length === 0 ? (
                     <div className="py-16 text-center rounded-[24px] planner-subtle">
                       <p
-                        className="text-[12px] font-medium"
+                        className="text-xs font-medium"
                         style={{ color: "var(--text-muted)" }}
                       >
                         {activeTab === "all"
@@ -2155,7 +2168,7 @@ export default function Planner() {
         ? "rgba(127,29,29,0.45)"
         : task.status === "rescheduled"
         ? "rgba(59,130,246,0.15)"  // 🔵 BLUE
-        : "var(--card-bg)",
+        : "var(--bg-card)",
   
     border:
       activeTaskId === task.id && isRunning
@@ -2179,7 +2192,7 @@ export default function Planner() {
                         <div className="flex-1 min-w-0 flex flex-col items-center text-center">
   <div className="flex items-center gap-2 justify-center flex-wrap">
     <span
-      className="text-[15px] font-semibold"
+      className="text-sm font-semibold"
       style={{
         color:
           activeTaskId === task.id && isRunning
@@ -2346,33 +2359,30 @@ export default function Planner() {
 
                 {taskStats && taskStats.total > 0 && (
                   <div
-                    className="mt-6 pt-4"
+                    className="mt-6 pt-5"
                     style={{ borderTop: "1px solid var(--border)" }}
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-3">
                       <span
-                        className="text-[11px] font-medium"
+                        className="text-xs font-bold uppercase tracking-wider"
                         style={{ color: "var(--text-muted)" }}
                       >
                         {taskStats.completed} of {taskStats.total} complete
                       </span>
                       <span
-                        className="text-[13px] font-bold"
+                        className="text-sm font-black"
                         style={{ color: "var(--text-primary)" }}
                       >
                         {taskStats.completion_rate}%
                       </span>
                     </div>
-                    <div
-                      className="w-full h-2 rounded-full overflow-hidden"
-                      style={{ background: "rgba(255,255,255,0.05)" }}
-                    >
+                    <div className="relative w-full h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)", boxShadow: "inner 0 1px 3px rgba(0,0,0,0.3)" }}>
                       <div
-                        className="h-full rounded-full transition-all duration-700"
+                        className="absolute top-0 left-0 h-full rounded-full transition-all duration-700 pointer-events-none"
                         style={{
                           width: `${taskStats.completion_rate}%`,
-                          background:
-                            "linear-gradient(90deg, #818cf8, #6366f1)",
+                          background: "linear-gradient(to right, #8b5cf6, #3b82f6)",
+                          boxShadow: "0 0 12px rgba(139,92,246,0.6)"
                         }}
                       />
                     </div>
@@ -2384,73 +2394,36 @@ export default function Planner() {
             <div className="col-span-12 lg:col-span-4 space-y-6">
               {result ? (
                 <>
-                  {result.distraction_aware && result.live_distraction && (
-                    <div
-                      className="flex items-center gap-3 p-4 rounded-[24px] planner-card"
-                      style={{
-                        background: result.live_distraction.is_distracted
-                          ? "rgba(239,68,68,0.04)"
-                          : "rgba(16,185,129,0.04)",
-                        border: `1px solid ${result.live_distraction.is_distracted ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)"}`,
-                      }}
-                    >
-                      <Zap
-                        className="w-4 h-4 flex-shrink-0"
-                        style={{
-                          color: result.live_distraction.is_distracted
-                            ? "#ef4444"
-                            : "#10b981",
-                        }}
-                      />
-                      <div className="flex-1">
-                        <p
-                          className="text-[12px] font-semibold"
-                          style={{ color: "var(--text-primary)" }}
-                        >
-                          {result.live_distraction.is_distracted
-                            ? "Distracted"
-                            : "Focused"}{" "}
-                          {Math.round(result.live_distraction.confidence * 100)}
-                          %
-                        </p>
-                        <p
-                          className="text-[10px] mt-0.5"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          {result.live_distraction.dominant_app}
-                          {result.distraction_adjustment > 0 &&
-                            ` · -${Math.round(result.distraction_adjustment * 100)}%`}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="p-6 rounded-[30px] planner-card">
+                  <div className="glass-card p-6 flex flex-col items-center justify-center">
                     <div className="flex flex-col items-center text-center">
                       <ProbabilityRing
                         value={result.task_completion_probability}
                       />
 
-                      <div className="mt-5 mb-3">
+                      <div className="mt-6 mb-4 flex items-center justify-center gap-2">
                         <span
-                          className="px-3 py-1 rounded-full text-[11px] font-semibold"
+                          className="px-3.5 py-1.5 rounded-full text-[11px] font-bold"
                           style={{
                             background:
                               result.prediction === 1
-                                ? "rgba(16,185,129,0.08)"
-                                : "rgba(239,68,68,0.08)",
+                                ? "rgba(16,185,129,0.12)"
+                                : "rgba(239,68,68,0.12)",
                             color:
                               result.prediction === 1 ? "#10b981" : "#ef4444",
+                            border: `1px solid ${result.prediction === 1 ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`,
+                            boxShadow: `0 2px 10px ${result.prediction === 1 ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)"}`
                           }}
                         >
                           {result.prediction === 1 ? "Can Complete" : "At Risk"}
                         </span>
                         {result.distraction_adjustment > 0 && (
                           <span
-                            className="ml-1.5 px-2 py-1 rounded-full text-[10px] font-semibold"
+                            className="px-3.5 py-1.5 rounded-full text-[11px] font-bold"
                             style={{
-                              background: "rgba(168,85,247,0.08)",
-                              color: "#a855f7",
+                              background: "rgba(168,85,247,0.12)",
+                              color: "#c084fc",
+                              border: "1px solid rgba(168,85,247,0.3)",
+                              boxShadow: "0 2px 10px rgba(168,85,247,0.15)"
                             }}
                           >
                             Adjusted
@@ -2459,21 +2432,21 @@ export default function Planner() {
                       </div>
 
                       <h3
-                        className="text-[16px] font-semibold leading-snug mb-1 max-w-[280px]"
+                        className="text-lg font-bold leading-snug mb-1.5 max-w-[280px]"
                         style={{ color: "var(--text-primary)" }}
                       >
                         {result.planner_decision}
                       </h3>
 
                       <p
-                        className="text-[11px]"
+                        className="text-xs font-medium"
                         style={{ color: "var(--text-muted)" }}
                       >
-                        {(result.task_completion_probability * 100).toFixed(1)}%
-                        probability
+                        <span className={result.prediction === 1 ? "text-emerald-400" : "text-rose-400"}>{(result.task_completion_probability * 100).toFixed(1)}%</span>
+                        {" "}probability
                         {result.original_probability !==
                           result.task_completion_probability && (
-                          <span>
+                          <span style={{ opacity: 0.6 }}>
                             {" "}
                             · base{" "}
                             {(result.original_probability * 100).toFixed(1)}%
@@ -2505,8 +2478,8 @@ export default function Planner() {
                     <div
                       className="p-4 rounded-[24px] planner-card"
                       style={{
-                        background: "rgba(168,85,247,0.04)",
-                        border: "1px solid rgba(168,85,247,0.1)",
+                        border: "1px solid rgba(168,85,247,0.3)",
+                        boxShadow: "inset 0 0 20px rgba(168,85,247,0.05), 0 18px 48px rgba(2,6,23,0.22)",
                       }}
                     >
                       <div className="flex items-start gap-3">
@@ -2516,7 +2489,7 @@ export default function Planner() {
                         />
                         <div>
                           <p
-                            className="text-[12px] font-semibold"
+                            className="text-xs font-semibold"
                             style={{ color: "#a855f7" }}
                           >
                             Rescheduled
@@ -2551,14 +2524,14 @@ export default function Planner() {
                               style={{ color: cfg.color }}
                             />
                             <h3
-                              className="text-[13px] font-semibold"
+                              className="text-xs font-semibold"
                               style={{ color: "var(--text-primary)" }}
                             >
                               AI Feedback
                             </h3>
                           </div>
                           <p
-                            className="text-[13px] leading-relaxed mb-3"
+                            className="text-xs leading-relaxed mb-3"
                             style={{ color: "var(--text-secondary)" }}
                           >
                             {result.feedback.message}
@@ -2627,7 +2600,7 @@ export default function Planner() {
                                         ),
                                       )
                                     }
-                                    className="w-20 px-3 py-2 rounded-xl text-[12px] font-semibold outline-none planner-input"
+                                    className="w-20 px-3 py-2 rounded-xl text-xs font-semibold outline-none planner-input"
                                     style={{
                                       background: "var(--bg-elevated)",
                                       color: "var(--text-primary)",
@@ -2662,8 +2635,8 @@ export default function Planner() {
                     <div
                       className="p-5 rounded-[28px] planner-card"
                       style={{
-                        background: "rgba(245,158,11,0.04)",
-                        border: "1px solid rgba(245,158,11,0.1)",
+                        border: "1px solid rgba(245,158,11,0.3)",
+                        boxShadow: "inset 0 0 20px rgba(245,158,11,0.05), 0 18px 48px rgba(2,6,23,0.22)",
                       }}
                     >
                       <div className="flex items-start gap-3">
@@ -2674,7 +2647,7 @@ export default function Planner() {
                         <div className="flex-1">
                           <div className="flex items-center justify-between mb-1">
                             <h4
-                              className="text-[12px] font-semibold"
+                              className="text-xs font-semibold"
                               style={{ color: "#f59e0b" }}
                             >
                               Social Media Alert
@@ -2687,7 +2660,7 @@ export default function Planner() {
                             </span>
                           </div>
                           <p
-                            className="text-[12px] leading-relaxed"
+                            className="text-xs leading-relaxed"
                             style={{ color: "var(--text-secondary)" }}
                           >
                             {result.social_alert.message}
@@ -2715,13 +2688,13 @@ export default function Planner() {
                     />
                   </div>
                   <h3
-                    className="text-[20px] font-black tracking-tight mb-2"
+                    className="text-xl font-bold tracking-tight mb-2"
                     style={{ color: "var(--text-primary)" }}
                   >
                     Ready to analyze
                   </h3>
                   <p
-                    className="text-[12px] max-w-[280px] leading-relaxed mb-5"
+                    className="text-xs max-w-[280px] leading-relaxed mb-5"
                     style={{ color: "var(--text-muted)" }}
                   >
                     {canShowPrediction
@@ -2743,7 +2716,7 @@ export default function Planner() {
                         className="rounded-[20px] p-4 planner-subtle"
                       >
                         <div
-                          className="text-[18px] font-black tracking-tight"
+                          className="text-lg font-black tracking-tight"
                           style={{ color: "var(--text-primary)" }}
                         >
                           {value}
@@ -2884,10 +2857,10 @@ export default function Planner() {
                 End
               </button>
             </div>
-            <div className="text-[28px] font-black tracking-tight" style={{ color: "#34d399" }}>
+            <div className="text-lg font-bold" style={{ color: "#34d399" }}>
               {formatTime(shortBreakRemainingSeconds)}
             </div>
-            <p className="text-[12px] mt-2 font-medium" style={{ color: "var(--text-primary)" }}>
+            <p className="text-xs mt-2 font-medium" style={{ color: "var(--text-primary)" }}>
               {breakMotivationMessages[breakMotivationIndex]}
             </p>
             <p className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }}>
@@ -2917,7 +2890,7 @@ export default function Planner() {
               <Play className="w-3 h-3" />
               <span className="text-[10px] font-semibold">Start Reminder</span>
             </div>
-            <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
+            <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
               It’s time to start "{startReminderTask.subject}"
             </p>
             <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
