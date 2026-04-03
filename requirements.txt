@@ -1,0 +1,29 @@
+# ══════════════════════════════════════════════════════════════
+#  SDPPS – Python Requirements
+#  Install with: pip install -r requirements.txt
+# ══════════════════════════════════════════════════════════════
+
+# ── Web Server & API ──────────────────────────────────────────
+flask>=3.0.0
+flask-cors>=4.0.0
+
+# ── Machine Learning & Data ───────────────────────────────────
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+joblib>=1.3.0
+
+# ── Deep Learning (BiLSTM model) ──────────────────────────────
+# For CPU-only (lighter, works on any machine):
+torch>=2.0.0
+
+# ── Desktop Agent (Windows monitoring) ───────────────────────
+pynput>=1.7.6          # keyboard & mouse capture
+psutil>=5.9.0          # process/system info
+pywin32>=306           # Windows API (win32gui, win32process) — Windows only
+
+# ── Data Visualization (content classification training) ──────
+matplotlib>=3.7.0
+
+# ── Optional: LLM-based app scoring (only if using OpenAI) ───
+# openai>=1.0.0        # Uncomment if you use score_apps_llm.py
