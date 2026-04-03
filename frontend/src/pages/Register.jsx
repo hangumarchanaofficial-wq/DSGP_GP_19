@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Rocket, User, Mail, Lock, Eye, EyeOff, CheckCircle2, Zap, Shield, BarChart3 } from 'lucide-react';
+import { Rocket, User, Mail, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, Zap, Shield, BarChart3 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 function WaveDivider() {
   return (
@@ -77,12 +78,15 @@ const STRENGTH = [
 ];
 
 export default function Register() {
-  const [form,   setForm]   = useState({ name: '', email: '', password: '' });
-  const [showPw, setShowPw] = useState(false);
-  const [accept, setAccept] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [done,   setDone]   = useState(false);
+  const [form,      setForm]      = useState({ name: '', email: '', password: '' });
+  const [showPw,    setShowPw]    = useState(false);
+  const [accept,    setAccept]    = useState(false);
+  const [errors,    setErrors]    = useState({});
+  const [done,      setDone]      = useState(false);
+  const [loading,   setLoading]   = useState(false);
+  const [serverErr, setServerErr] = useState('');
   const navigate = useNavigate();
+  const { register } = useAuth();
 
   const update = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -95,11 +99,19 @@ export default function Register() {
     return e;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setServerErr('');
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
+    setLoading(true);
+    const result = await register(form.name, form.email, form.password);
+    setLoading(false);
+    if (!result.success) {
+      setServerErr(result.error || 'Registration failed. Please try again.');
+      return;
+    }
     setDone(true);
     setTimeout(() => navigate('/dashboard'), 1400);
   };
@@ -301,6 +313,21 @@ export default function Register() {
             </p>
           </div>
 
+          {/* Server error banner */}
+          {serverErr && (
+            <div style={{
+              marginBottom: 24,
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '13px 16px', borderRadius: 12,
+              background: 'rgba(239,68,68,0.10)',
+              border: '1px solid rgba(239,68,68,0.30)',
+              color: '#f87171', fontSize: 13.5, fontWeight: 500,
+            }}>
+              <AlertCircle size={18} />
+              {serverErr}
+            </div>
+          )}
+
           {/* Success banner */}
           {done && (
             <div style={{
@@ -312,7 +339,7 @@ export default function Register() {
               color: '#34d399', fontSize: 13.5, fontWeight: 500,
             }}>
               <CheckCircle2 size={18} />
-              Account created! Redirecting to dashboard…
+              Account created! Redirecting…
             </div>
           )}
 
@@ -488,7 +515,7 @@ export default function Register() {
                     opacity: done ? 0.7 : 1,
                   }}
                 >
-                  {done ? 'Creating…' : 'Sign Up'}
+                  {loading ? 'Creating…' : done ? 'Done!' : 'Sign Up'}
                 </button>
 
                 <Link
