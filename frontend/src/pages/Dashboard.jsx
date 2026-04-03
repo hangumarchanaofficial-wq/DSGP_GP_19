@@ -1,13 +1,15 @@
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Footer from '../components/Footer';
 import { useAgent } from '../hooks/useAgent';
 import { useTheme } from '../context/ThemeContext';
+import { useAuth } from '../context/AuthContext';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { Activity, Shield, Database, Eye, Wifi, WifiOff, BookOpen } from 'lucide-react';
+import { Activity, Shield, Database, Eye, Wifi, WifiOff, BookOpen, LogOut } from 'lucide-react';
 
 /* ── Focus Gauge ─────────────────────────────────── */
 function FocusGauge({ score, isDistracted, confidence }) {
@@ -106,6 +108,8 @@ function ChartTooltip({ active, payload, label }) {
 /* ── Dashboard Page ───────────────────────────────── */
 export default function Dashboard() {
   const { dark } = useTheme();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const {
     status, connected, prediction, blocker, contentClassifier,
     snapshots, history, toggleBlocking,
@@ -129,7 +133,7 @@ export default function Dashboard() {
   const currentAppScore = prediction?.app_category ?? currentSnapshot.app_category_score ?? 0;
   const currentAppLabel = prediction?.label ?? (connected ? 'COLLECTING' : 'WAITING');
 
-  // Timeline from history
+  // Timeline data
   const timelineData = useMemo(() => {
     if (!history || history.length === 0) return [];
     return history.slice(-40).map((h, i) => ({
@@ -139,7 +143,7 @@ export default function Dashboard() {
     }));
   }, [history]);
 
-  // App distribution from history
+  // App distribution
   const appDistribution = useMemo(() => {
     if (!history || history.length === 0) return [];
     const counts = {};
@@ -155,7 +159,6 @@ export default function Dashboard() {
       .map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
   }, [history]);
 
-  // Latest raw features
   const lastEntry = history?.length > 0 ? history[history.length - 1] : null;
   const rawFeatures = lastEntry?.raw_features ?? {};
 
@@ -181,24 +184,58 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
-              style={{
-                background: connected ? 'var(--success-bg)' : 'var(--danger-bg)',
-                color: connected ? 'var(--success)' : 'var(--danger)',
-              }}>
-              <div className={`connection-dot ${connected ? 'online' : 'offline'}`} />
-              {connected ? `Live · ${snapshots} snapshots` : 'Offline'}
+            {/* Agent Controls Group */}
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 h-9 rounded-full text-xs font-semibold"
+                style={{
+                  background: connected ? 'var(--success-bg)' : 'var(--danger-bg)',
+                  color: connected ? 'var(--success)' : 'var(--danger)',
+                  border: `1px solid ${connected ? 'transparent' : 'var(--danger)'}`,
+                }}>
+                <div className={`connection-dot ${connected ? 'online' : 'offline'}`} />
+                {connected ? `Live · ${snapshots} snapshots` : 'Offline'}
+              </div>
+
+              <button onClick={toggleBlocking} disabled={!connected}
+                className="flex items-center gap-2 px-4 h-9 rounded-full text-xs font-bold transition-all disabled:opacity-30 border"
+                style={{
+                  background: blocker?.is_blocking ? 'var(--danger-bg)' : 'var(--accent-bg)',
+                  color: blocker?.is_blocking ? 'var(--danger)' : 'var(--accent)',
+                  borderColor: blocker?.is_blocking ? 'var(--danger)' : 'var(--accent)',
+                }}>
+                <Shield className="w-3.5 h-3.5" />
+                {blocker?.is_blocking ? 'Blocking On' : 'Block Off'}
+              </button>
             </div>
-            <button onClick={toggleBlocking} disabled={!connected}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-30"
-              style={{
-                background: blocker?.is_blocking ? 'var(--danger-bg)' : 'var(--accent-bg)',
-                color: blocker?.is_blocking ? 'var(--danger)' : 'var(--accent)',
-                border: `1px solid ${blocker?.is_blocking ? 'var(--danger)' : 'var(--accent)'}`,
-              }}>
-              <Shield className="w-3.5 h-3.5" />
-              {blocker?.is_blocking ? 'Blocking Active' : 'Block Off'}
-            </button>
+
+            {/* Separator */}
+            {user && <div className="w-px h-6" style={{ background: 'var(--border)' }} />}
+
+            {/* User Profile / Logout */}
+            {user && (
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-bold" style={{ color: 'var(--text-primary)' }}>
+                  {user.name}
+                </span>
+                <button
+                  onClick={async () => { await logout(); navigate('/login'); }}
+                  title="Log out"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    height: 36, padding: '0 16px', borderRadius: 999,
+                    background: 'rgba(239,68,68,0.08)',
+                    border: '1px solid rgba(239,68,68,0.25)',
+                    color: '#f87171', fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', transition: 'all 0.2s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.18)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                >
+                  <LogOut size={14} />
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
