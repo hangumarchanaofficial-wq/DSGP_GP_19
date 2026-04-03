@@ -5,24 +5,31 @@ import {
 import { getTaskStartTime } from "./plannerUtils";
 
 // Shared planner UI sections live here so the main page is easier to present.
-export function ProbabilityRing({ value, size = 168 }) {
+export function ProbabilityRing({ value, size = 180 }) {
   const pct = Math.round(value * 100);
-  const strokeW = 7;
-  const r = size / 2 - strokeW - 6;
+  const strokeW = 8;
+  const r = size / 2 - strokeW - 12;
   const cx = size / 2;
   const cy = size / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ - (pct / 100) * circ;
-  const color = pct >= 70 ? "#10b981" : pct >= 40 ? "#f59e0b" : "#ef4444";
+  
+  // Determine color matching standard system scale
+  const isHigh = pct >= 70;
+  const isMid = pct >= 40 && pct < 70;
+  const color = isHigh ? "#10b981" : isMid ? "#f59e0b" : "#ef4444";
+  const glowColor = isHigh ? "rgba(16,185,129,0.3)" : isMid ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)";
+  const bgGlowColor = isHigh ? "rgba(16,185,129,0.12)" : isMid ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)";
 
   return (
     <div
-      className="relative flex items-center justify-center rounded-[34px]"
+      className="relative flex items-center justify-center rounded-3xl"
       style={{
         width: size,
         height: size,
-        background:
-          "radial-gradient(circle at 30% 30%, rgba(129,140,248,0.18), rgba(129,140,248,0.04) 44%, transparent 72%)",
+        background: `radial-gradient(circle at center, ${bgGlowColor} 0%, rgba(15,23,42,0.6) 60%, transparent 100%)`,
+        boxShadow: "inset 0 4px 20px rgba(0,0,0,0.3)",
+        border: "1px solid rgba(255,255,255,0.02)"
       }}
     >
       <svg width={size} height={size} className="transform -rotate-90">
@@ -31,9 +38,8 @@ export function ProbabilityRing({ value, size = 168 }) {
           cy={cy}
           r={r}
           fill="none"
-          stroke="var(--border)"
+          stroke="rgba(255,255,255,0.05)"
           strokeWidth={strokeW}
-          opacity="0.28"
         />
         <circle
           cx={cx}
@@ -46,23 +52,28 @@ export function ProbabilityRing({ value, size = 168 }) {
           strokeDasharray={circ}
           strokeDashoffset={offset}
           style={{
-            transition: "stroke-dashoffset 1s ease",
-            filter: "drop-shadow(0 0 12px rgba(129,140,248,0.18))",
+            transition: "stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1)",
+            filter: `drop-shadow(0 0 10px ${glowColor})`,
           }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
+      <div className="absolute inset-0 flex flex-col items-center justify-center pt-1">
         <span
-          className="font-black"
-          style={{ fontSize: size * 0.26, color, lineHeight: 1 }}
+          className="font-black tracking-tighter"
+          style={{ 
+            fontSize: size * 0.3, 
+            color,
+            lineHeight: 0.9,
+            textShadow: `0 0 24px ${glowColor}`
+          }}
         >
           {pct}
         </span>
-        <span
-          className="text-[9px] font-semibold uppercase tracking-widest mt-1"
-          style={{ color: "var(--text-muted)" }}
+        <span 
+          className="text-[10px] font-bold uppercase tracking-[0.25em] mt-1"
+          style={{ color: "var(--text-muted)", opacity: 0.8 }}
         >
-          percent
+          Percent
         </span>
       </div>
     </div>
@@ -186,25 +197,46 @@ export function FocusTimer({
 
   return (
     <>
-      <div className="rounded-[28px] p-5 planner-card planner-subtle">
-        <div className="mb-5">
+      <div className="glass-card flex flex-col h-full p-6 transition-all hover:shadow-lg relative overflow-hidden group">
+        {/* Subtle background glow when active */}
+        <div 
+          className={`absolute inset-0 opacity-0 transition-opacity duration-1000 pointer-events-none ${shortBreakActive ? 'opacity-100' : ''}`}
+          style={{
+            background: "radial-gradient(circle at center 40%, rgba(16,185,129,0.05) 0%, transparent 60%)"
+          }}
+        />
+
+        <div className="flex items-start justify-between gap-3 mb-5 relative z-10">
           <div>
-            <h4
-              className="text-[15px] font-semibold tracking-tight"
-              style={{ color: "var(--text-primary)" }}
-            >
-              Break Time
-            </h4>
             <p
-              className="text-[11px] mt-0.5"
+              className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
               style={{ color: "var(--text-muted)" }}
             >
-              Pick a break length and pause alerts until it ends
+              Break Timer
             </p>
+            <h2
+              className="text-sm font-bold"
+              style={{ color: "var(--text-primary)" }}
+            >
+              Take a Breather
+            </h2>
+          </div>
+          <div
+            className="px-3 py-1.5 rounded-full text-[10px] font-bold transition-all"
+            style={{
+              background: shortBreakActive ? "rgba(16,185,129,0.15)" : "var(--bg-elevated)",
+              color: shortBreakActive ? "#10b981" : "var(--text-muted)",
+              border: shortBreakActive
+                ? "1px solid rgba(16,185,129,0.3)"
+                : "1px solid var(--border)",
+              boxShadow: shortBreakActive ? "0 0 12px rgba(16,185,129,0.2)" : "none"
+            }}
+          >
+            {shortBreakActive ? "Running" : "Paused"}
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-5">
+        <div className="grid grid-cols-2 gap-2 mb-5 relative z-10">
           {breakOptions.map((minutes) => (
             <button
               key={minutes}
@@ -213,19 +245,18 @@ export function FocusTimer({
                 onBreakMinutesChange(minutes)
               }
               disabled={shortBreakActive}
-              className="px-3 py-2.5 rounded-2xl text-[11px] font-semibold transition-all"
+              className="px-3 py-3 rounded-xl text-xs font-bold transition-all"
               style={{
                 background:
                   breakMinutesInput === minutes
-                    ? "linear-gradient(135deg, rgba(52,211,153,0.95), rgba(16,185,129,0.82))"
-                    : "rgba(255,255,255,0.03)",
-                color: breakMinutesInput === minutes ? "#ecfdf5" : "var(--text-muted)",
-                border:
-                  breakMinutesInput === minutes
-                    ? "1px solid rgba(52,211,153,0.38)"
-                    : "1px solid var(--border)",
-                opacity: shortBreakActive && breakMinutesInput !== minutes ? 0.55 : 1,
+                    ? "linear-gradient(to right, #10b981, #059669)"
+                    : "var(--bg-elevated)",
+                color: breakMinutesInput === minutes ? "#fff" : "var(--text-muted)",
+                border: breakMinutesInput === minutes ? "1px solid transparent" : "1px solid var(--border)",
+                opacity: shortBreakActive && breakMinutesInput !== minutes ? 0.4 : 1,
                 cursor: shortBreakActive ? "default" : "pointer",
+                boxShadow: breakMinutesInput === minutes ? "0 4px 12px rgba(16,185,129,0.25)" : "inset 0 2px 4px rgba(0,0,0,0.05)",
+                transform: breakMinutesInput === minutes ? "scale(1.02)" : "scale(1)",
               }}
             >
               {minutes} min
@@ -234,24 +265,27 @@ export function FocusTimer({
         </div>
 
         <div
-          className="text-center py-4 mb-5 rounded-[24px]"
+          className="rounded-2xl p-5 mb-5 text-center transition-all flex flex-col items-center justify-center relative z-10 flex-1"
           style={{
-            background:
-              "radial-gradient(circle at top, rgba(52,211,153,0.18), transparent 60%)",
+            background: "rgba(15,23,42,0.2)",
+            border: "1px solid rgba(16,185,129,0.1)",
+            boxShadow: "inset 0 2px 10px rgba(0,0,0,0.2), 0 1px 0 rgba(255,255,255,0.02)",
           }}
         >
           <div
-            className="text-6xl font-black tracking-tight"
+            className={`text-6xl font-black tracking-tighter transition-all ${shortBreakActive ? 'scale-105' : ''}`}
             style={{
-              color: shortBreakActive ? "#34d399" : "var(--text-primary)",
+              color: shortBreakActive ? "#10b981" : "var(--text-primary)",
               fontVariantNumeric: "tabular-nums",
+              textShadow: shortBreakActive ? "0 0 20px rgba(16,185,129,0.4)" : "none"
             }}
           >
             {String(mins).padStart(2, "0")}
             <span
+              className={shortBreakActive ? "animate-[pulse_1.5s_ease-in-out_infinite]" : ""}
               style={{
-                color: shortBreakActive ? "#34d399" : "var(--text-muted)",
-                opacity: shortBreakActive ? 1 : 0.45,
+                color: shortBreakActive ? "#10b981" : "var(--text-muted)",
+                opacity: shortBreakActive ? 1 : 0.3,
               }}
             >
               :
@@ -259,63 +293,64 @@ export function FocusTimer({
             {String(secs).padStart(2, "0")}
           </div>
           <p
-            className="text-[11px] mt-2 font-medium"
+            className="text-[10px] mt-2 font-medium"
             style={{ color: "var(--text-muted)" }}
           >
             {shortBreakActive
-              ? "Break running in the top corner"
-              : "Choose minutes before starting your break"}
+              ? "Silence mode engaged."
+              : "Select duration before starting break."}
           </p>
         </div>
 
-        <div
-          className="w-full h-2 rounded-full overflow-hidden mb-6"
-          style={{ background: "rgba(255,255,255,0.05)" }}
-        >
-          <div
-            className="h-full rounded-full transition-all duration-1000"
-            style={{
-              width: `${Math.max(0, Math.min(progress, 100))}%`,
-              background: "linear-gradient(90deg, #34d399, #10b981)",
-            }}
-          />
+        <div className="relative z-10 w-full mb-6">
+           <div
+            className="w-full h-1.5 rounded-full overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.05)" }}
+          >
+            <div
+              className="h-full rounded-full transition-all duration-1000"
+              style={{
+                width: `${Math.max(0, Math.min(progress, 100))}%`,
+                background: "linear-gradient(to right, #34d399, #10b981)",
+                boxShadow: shortBreakActive ? "0 0 10px rgba(16,185,129,0.5)" : "none"
+              }}
+            />
+          </div>
         </div>
 
-        <div className="flex items-center justify-center gap-3">
+        <div className="relative z-10 w-full mt-auto">
           {shortBreakActive ? (
             <button
               onClick={onEndBreak}
-              className="px-5 h-11 rounded-2xl flex items-center justify-center text-[12px] font-semibold transition-all"
+              className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98] relative overflow-hidden flex items-center justify-center"
               style={{
-                background: "rgba(239,68,68,0.12)",
+                background: "linear-gradient(to right, rgba(239,68,68,0.2), rgba(220,38,38,0.15))",
+                border: "1px solid rgba(239,68,68,0.4)",
                 color: "#ef4444",
-                border: "1px solid rgba(239,68,68,0.18)",
               }}
             >
-              End Break
+              End Break Early
             </button>
           ) : (
             <button
               onClick={onStartBreak}
-              className="px-5 h-11 rounded-2xl flex items-center justify-center text-[12px] font-semibold transition-all"
+              className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98] relative overflow-hidden flex items-center justify-center"
               style={{
-                background:
-                  "linear-gradient(135deg, rgba(52,211,153,0.95), rgba(16,185,129,0.82))",
-                color: "#fff",
-                boxShadow: "0 16px 28px rgba(16,185,129,0.22)",
+                background: "linear-gradient(to right, #10b981, #059669)",
+                boxShadow: "0 4px 14px rgba(16,185,129,0.25)",
               }}
             >
-              Start Break
+              Start Break Timer
             </button>
           )}
-        </div>
 
-        <p
-          className="text-[10px] text-center mt-3"
-          style={{ color: "var(--text-muted)" }}
-        >
-          No alerts or reminders will show until the break timer ends.
-        </p>
+          <p
+            className="text-[10px] font-medium leading-relaxed mt-4 text-center px-2"
+            style={{ color: "var(--text-muted)" }}
+          >
+            No alerts or reminders will show until the break timer ends.
+          </p>
+        </div>
       </div>
 
       {activeMissedTask && !notificationsMuted && (
@@ -343,13 +378,13 @@ export function FocusTimer({
             </div>
 
             <h3
-              className="text-[20px] font-black tracking-tight mb-1"
+              className="text-xl font-black tracking-tight mb-1"
               style={{ color: "var(--text-primary)" }}
             >
               {activeMissedTask.subject}
             </h3>
             <p
-              className="text-[12px] mb-5"
+              className="text-xs mb-5"
               style={{ color: "var(--text-secondary)" }}
             >
               Choose what to do with this missed task.
@@ -359,7 +394,7 @@ export function FocusTimer({
               <button
                 onClick={() => handleMissedTaskAction("reschedule")}
                 disabled={processingMissedAction}
-                className="w-full py-3.5 rounded-2xl text-[13px] font-semibold text-white"
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white"
                 style={{
                   background:
                     "linear-gradient(135deg, rgba(129,140,248,0.96), rgba(99,102,241,0.82))",
@@ -371,7 +406,7 @@ export function FocusTimer({
               <button
                 onClick={() => handleMissedTaskAction("start")}
                 disabled={processingMissedAction}
-                className="w-full py-3.5 rounded-2xl text-[13px] font-semibold"
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold"
                 style={{
                   color: "#10b981",
                   background: "rgba(16,185,129,0.12)",
@@ -384,7 +419,7 @@ export function FocusTimer({
               <button
                 onClick={() => handleMissedTaskAction("delete")}
                 disabled={processingMissedAction}
-                className="w-full py-3.5 rounded-2xl text-[13px] font-semibold text-white"
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white"
                 style={{
                   background:
                     "linear-gradient(135deg, rgba(239,68,68,0.96), rgba(190,24,93,0.82))",
@@ -563,7 +598,7 @@ export function Timeline({ tasks }) {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span
-                      className="text-[13px] font-semibold truncate"
+                      className="text-sm font-semibold truncate"
                       style={{
                         color:
                           task.status === "completed"
