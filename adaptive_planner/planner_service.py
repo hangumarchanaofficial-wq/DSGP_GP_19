@@ -1476,15 +1476,36 @@ class AdaptivePlanner:
 
     # ── Main predict ─────────────────────────────────────────────
 
+    def _study_fatigue_probability(self, study_hours):
+        """Estimate task readiness from cumulative study load."""
+        study_hours = max(0.0, float(study_hours or 0))
+        fatigue_score = 0.98 - (0.03 * study_hours) - (0.003 * (study_hours ** 2))
+        return max(0.05, min(fatigue_score, 0.98))
+
     def predict(self, data, distraction_state=None, content_state=None):
         if self.model is None:
             self.train()
 
         X = self._prepare_features(data)
-        prob = float(self.model.predict_proba(X)[0][1])
-        original_prob = prob
+        model_prob = float(self.model.predict_proba(X)[0][1])
+        original_prob = model_prob
         distraction_adjustment = 0.0
         content_adjustment = 0.0
+
+        study_hours = float(data.get('study_hours_per_day', 0) or 0)
+        sleep_hours = float(data.get('sleep_hours', 0) or 0)
+        social_hours = float(data.get('total_social_hours', 0) or 0)
+
+        study_prob = self._study_fatigue_probability(study_hours)
+        sleep_adjustment = (sleep_hours - 7.0) * 0.035
+        social_adjustment = social_hours * 0.11
+
+        rule_based_probability = study_prob + sleep_adjustment - social_adjustment
+        rule_based_probability = max(0.0, min(rule_based_probability, 1.0))
+
+        # Keep the ML classifier as a supporting signal while making the
+        # planner respond smoothly to current fatigue and routine inputs.
+        prob = (0.15 * model_prob) + (0.85 * rule_based_probability)
 
         # Content classification adjustment
         content_context = None
@@ -1495,9 +1516,11 @@ class AdaptivePlanner:
 
         # Distraction model adjustment
         if distraction_state and distraction_state.get('is_distracted'):
-            dist_confidence = distraction_state.get('confidence', 0)
-            distraction_adjustment = dist_confidence * 0.3
-            prob = max(0.01, prob - distraction_adjustment)
+            dist_confidence = float(distraction_state.get('confidence', 0) or 0)
+            distraction_adjustment = dist_confidence * 0.30
+            prob = max(0.01, min(0.99, prob - distraction_adjustment))
+
+        prob = max(0.0, min(prob, 1.0))
 
         pred = int(prob >= 0.5)
 
@@ -1542,7 +1565,6 @@ class AdaptivePlanner:
 
         # Social media alert
         social_alert = None
-        social_hours = float(data.get('total_social_hours', 0))
         if social_hours > 1:
             self.social_alert_count += 1
             if self.social_alert_count <= 3:
@@ -1567,6 +1589,7 @@ class AdaptivePlanner:
             'prediction': pred,
             'task_completion_probability': round(prob, 4),
             'original_probability': round(original_prob, 4),
+            'rule_based_probability': round(rule_based_probability, 4),
             'distraction_adjustment': round(distraction_adjustment, 4),
             'content_adjustment': round(content_adjustment, 4),
             'planner_decision': decision,

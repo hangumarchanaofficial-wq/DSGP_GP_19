@@ -382,6 +382,7 @@ export default function Planner() {
 
   const [distractionState, setDistractionState] = useState(null);
   const [rescheduleAlert, setRescheduleAlert] = useState(null);
+  const [plannerNotice, setPlannerNotice] = useState(null);
   const [startReminderTask, setStartReminderTask] = useState(null);
   const [startReminderCooldown, setStartReminderCooldown] = useState({});
   const [showBreakDurationPicker, setShowBreakDurationPicker] = useState(false);
@@ -395,6 +396,14 @@ export default function Planner() {
 
   // Updates a single field inside the student profile form state.
   const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const showPlannerNotice = useCallback((title, message, tone = "warning") => {
+    setPlannerNotice({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title,
+      message,
+      tone,
+    });
+  }, []);
 
   // Validates and updates the hour/minute inputs used for sleep logging.
   const updateSleepField = (field, value, setter) => {
@@ -749,6 +758,12 @@ export default function Planner() {
     return () => clearInterval(id);
   }, [shortBreakActive]);
 
+  useEffect(() => {
+    if (!plannerNotice) return;
+    const id = setTimeout(() => setPlannerNotice(null), 4200);
+    return () => clearTimeout(id);
+  }, [plannerNotice]);
+
   // Creates a new planner task after validating the requested start time.
   const handleAddTask = async () => {
     if (
@@ -757,7 +772,10 @@ export default function Planner() {
       !newTask.start_minute ||
       !newTask.start_meridiem
     ) {
-      alert("Please enter subject and start time.");
+      showPlannerNotice(
+        "Task details missing",
+        "Add a subject and choose a start time before creating the session.",
+      );
       return;
     }
   
@@ -773,7 +791,10 @@ export default function Planner() {
       });
 
       if (existingTaskAtSameTime) {
-        alert("You already have a task at that time.");
+        showPlannerNotice(
+          "Time slot already reserved",
+          "That start time is already assigned. Pick another slot to keep the plan clean.",
+        );
         return;
       }
   
@@ -797,7 +818,7 @@ export default function Planner() {
           const errText = await res.text();
           console.error("Add task failed:", errText);
         }
-        alert(errMessage);
+        showPlannerNotice("Unable to add task", errMessage);
         return;
       }
   
@@ -823,6 +844,10 @@ export default function Planner() {
       fetchTasks();
     } catch (err) {
       console.error("Add task error:", err);
+      showPlannerNotice(
+        "Planner request failed",
+        "The task could not be saved right now. Try again in a moment.",
+      );
     }
   };
 
@@ -1274,6 +1299,81 @@ export default function Planner() {
                   className="w-3.5 h-3.5"
                   style={{ color: "var(--text-muted)" }}
                 />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {plannerNotice && (
+          <div className="max-w-[1440px] mx-auto w-full px-6 lg:px-8 pt-5">
+            <div
+              className="p-4 rounded-[24px] flex items-start gap-3 planner-card"
+              style={{
+                background:
+                  plannerNotice.tone === "danger"
+                    ? "linear-gradient(135deg, rgba(239,68,68,0.12), rgba(127,29,29,0.22))"
+                    : "linear-gradient(135deg, rgba(129,140,248,0.12), rgba(17,24,39,0.38))",
+                border:
+                  plannerNotice.tone === "danger"
+                    ? "1px solid rgba(248,113,113,0.28)"
+                    : "1px solid rgba(129,140,248,0.24)",
+                boxShadow:
+                  plannerNotice.tone === "danger"
+                    ? "0 18px 45px rgba(127,29,29,0.18), inset 0 1px 0 rgba(255,255,255,0.05)"
+                    : "0 18px 45px rgba(79,70,229,0.16), inset 0 1px 0 rgba(255,255,255,0.05)",
+                animation: "plannerNoticeEnter 260ms ease-out",
+              }}
+            >
+              <div
+                className="w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0"
+                style={{
+                  background:
+                    plannerNotice.tone === "danger"
+                      ? "rgba(239,68,68,0.16)"
+                      : "rgba(129,140,248,0.16)",
+                  color: plannerNotice.tone === "danger" ? "#f87171" : "#818cf8",
+                }}
+              >
+                <AlertCircle className="w-4 h-4" />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span
+                    className="text-[10px] uppercase tracking-[0.24em] font-black"
+                    style={{
+                      color: plannerNotice.tone === "danger" ? "#fca5a5" : "#a5b4fc",
+                    }}
+                  >
+                    Planner notice
+                  </span>
+                  <span
+                    className="w-1 h-1 rounded-full"
+                    style={{
+                      background: plannerNotice.tone === "danger" ? "#f87171" : "#818cf8",
+                    }}
+                  />
+                  <span
+                    className="text-[11px] font-semibold"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    Action needed
+                  </span>
+                </div>
+                <p className="text-sm font-bold mb-1" style={{ color: "var(--text-primary)" }}>
+                  {plannerNotice.title}
+                </p>
+                <p className="text-xs leading-6" style={{ color: "var(--text-secondary)" }}>
+                  {plannerNotice.message}
+                </p>
+              </div>
+
+              <button
+                onClick={() => setPlannerNotice(null)}
+                className="p-1.5 rounded-xl hover:opacity-75 transition-opacity"
+                aria-label="Dismiss planner notice"
+              >
+                <X className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
               </button>
             </div>
           </div>
@@ -2309,7 +2409,10 @@ export default function Planner() {
     <button
       onClick={() => {
         if (activeTaskId && isRunning) {
-          alert("Pause the current task before starting another one.");
+          showPlannerNotice(
+            "Task already in progress",
+            "Pause the current session before launching a different task.",
+          );
           return;
         }
 
@@ -2333,7 +2436,10 @@ export default function Planner() {
 <button
   onClick={() => {
     if (activeTaskId === task.id && isRunning) {
-      alert("Cannot delete a running task. Pause it first.");
+      showPlannerNotice(
+        "Task can’t be removed yet",
+        "Pause the running session first, then remove it from your queue.",
+      );
       return;
     }
     deleteTask(task.id);
@@ -2825,14 +2931,32 @@ export default function Planner() {
           box-shadow: none;
         }
         select {
+          appearance: none;
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          color-scheme: dark;
           background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
           background-repeat: no-repeat;
           background-position: right 12px center;
           padding-right: 30px !important;
         }
+        select option {
+          background: #0b1120;
+          color: #f8fafc;
+        }
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
+        }
+        @keyframes plannerNoticeEnter {
+          0% {
+            opacity: 0;
+            transform: translateY(-10px) scale(0.985);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
         }
       `}</style>
 

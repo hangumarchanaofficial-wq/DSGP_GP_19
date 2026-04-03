@@ -180,7 +180,7 @@ def register():
             )
             conn.commit()
             user = conn.execute(
-                "SELECT id, name, email FROM users WHERE email = ?", (email,)
+                "SELECT id, name, email, created_at, last_login FROM users WHERE email = ?", (email,)
             ).fetchone()
     except sqlite3.IntegrityError:
         return bad("An account with that email already exists.", 409)
@@ -189,7 +189,13 @@ def register():
     return jsonify({
         "message": "Account created successfully.",
         "token": token,
-        "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "created_at": user["created_at"],
+            "last_login": user["last_login"],
+        },
     }), 201
 
 
@@ -205,17 +211,18 @@ def login():
 
     with get_db() as conn:
         user = conn.execute(
-            "SELECT id, name, email, password FROM users WHERE email = ?", (email,)
+            "SELECT id, name, email, password, created_at FROM users WHERE email = ?", (email,)
         ).fetchone()
 
     if not user or not verify_password(password, user["password"]):
         return bad("Invalid email or password.", 401)
 
     # Update last_login
+    last_login = datetime.utcnow().isoformat()
     with get_db() as conn:
         conn.execute(
             "UPDATE users SET last_login=? WHERE id=?",
-            (datetime.utcnow().isoformat(), user["id"]),
+            (last_login, user["id"]),
         )
         conn.commit()
 
@@ -223,7 +230,13 @@ def login():
     return jsonify({
         "message": "Login successful.",
         "token": token,
-        "user": {"id": user["id"], "name": user["name"], "email": user["email"]},
+        "user": {
+            "id": user["id"],
+            "name": user["name"],
+            "email": user["email"],
+            "created_at": user["created_at"],
+            "last_login": last_login,
+        },
     })
 
 
