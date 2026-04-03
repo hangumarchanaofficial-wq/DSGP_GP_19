@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Rocket, Mail, Lock, Eye, EyeOff,
-  Zap, Shield, BarChart3, ArrowRight, CheckCircle2,
+  Zap, Shield, BarChart3, ArrowRight, CheckCircle2, AlertCircle,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 /* ─────────────────────────────────────────────────────────────
    Wave divider — matches Register exactly
@@ -101,16 +102,18 @@ function FeatureCard({ icon: Icon, title, desc }) {
    LOGIN PAGE
 ═════════════════════════════════════════════════════════════ */
 export default function Login() {
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [showPw,   setShowPw]   = useState(false);
-  const [remember, setRemember] = useState(false);
-  const [errors,   setErrors]   = useState({});
-  const [loading,  setLoading]  = useState(false);
-  const [done,     setDone]     = useState(false);
+  const [email,      setEmail]      = useState('');
+  const [password,   setPassword]   = useState('');
+  const [showPw,     setShowPw]     = useState(false);
+  const [remember,   setRemember]   = useState(false);
+  const [errors,     setErrors]     = useState({});
+  const [loading,    setLoading]    = useState(false);
+  const [done,       setDone]       = useState(false);
+  const [serverErr,  setServerErr]  = useState('');
   const navigate = useNavigate();
+  const { login }  = useAuth();
 
-  /* validation */
+  /* client-side validation */
   const validate = () => {
     const e = {};
     if (!/\S+@\S+\.\S+/.test(email))  e.email    = 'Enter a valid email address.';
@@ -118,14 +121,21 @@ export default function Login() {
     return e;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setServerErr('');
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
     setLoading(true);
-    setTimeout(() => { setLoading(false); setDone(true); }, 800);
-    setTimeout(() => navigate('/dashboard'), 2000);
+    const result = await login(email, password);
+    setLoading(false);
+    if (!result.success) {
+      setServerErr(result.error || 'Login failed. Please try again.');
+      return;
+    }
+    setDone(true);
+    setTimeout(() => navigate('/dashboard'), 1200);
   };
 
   const canSubmit = email && password.length >= 6;
@@ -310,6 +320,21 @@ export default function Login() {
             </p>
           </div>
 
+          {/* ── Server error banner ─────────────────── */}
+          {serverErr && (
+            <div style={{
+              marginBottom: 24,
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '13px 16px', borderRadius: 12,
+              background: 'rgba(239,68,68,0.10)',
+              border: '1px solid rgba(239,68,68,0.30)',
+              color: '#f87171', fontSize: 13.5, fontWeight: 500,
+            }}>
+              <AlertCircle size={18} />
+              {serverErr}
+            </div>
+          )}
+
           {/* ── Success banner ──────────────────────── */}
           {done && (
             <div style={{
@@ -321,7 +346,7 @@ export default function Login() {
               color: '#34d399', fontSize: 13.5, fontWeight: 500,
             }}>
               <CheckCircle2 size={18} />
-              Login successful! Redirecting to dashboard…
+              Login successful! Redirecting…
             </div>
           )}
 
