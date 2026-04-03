@@ -2,6 +2,7 @@
 from flask_cors import CORS
 import traceback
 from datetime import datetime, timedelta
+from desktop_agent.blocker import app_family
 
 try:
     from desktop_agent.config import BLOCKED_SITES
@@ -92,6 +93,58 @@ def _next_planner_slot(planner, task):
     }
 
 
+def _normalize_app_name(app_name):
+    app = str(app_name or "").strip().lower()
+    if not app:
+        return ""
+    return app if app.endswith(".exe") else f"{app}.exe"
+
+
+def _summarize_distracted_apps(agent, blocked_apps):
+    blocker_obj = getattr(agent, 'blocker', None)
+    blocked_set = {app_family(app) for app in (blocked_apps or [])}
+    manual_set = {app_family(app) for app in (blocker_obj.get_manual_blocked_apps() if blocker_obj else [])}
+    auto_set = {app_family(app) for app in (blocker_obj.get_auto_blocked_apps() if blocker_obj else [])}
+    distracted = {}
+
+    for entry in getattr(agent, '_prediction_history', []) or []:
+        if entry.get('label') != 'DISTRACTED':
+            continue
+
+        app = app_family(entry.get('dominant_app'))
+        if not app:
+            continue
+
+        item = distracted.setdefault(app, {
+            'app_name': app,
+            'display_name': app,
+            'count': 0,
+            'latest_confidence': 0.0,
+            'latest_probability': 0.0,
+            'last_seen': None,
+            'is_blocked': False,
+            'is_manual_blocked': False,
+            'is_auto_blocked': False,
+            'auto_block_reason': None,
+            'protection_reason': blocker_obj.auto_block_reason(app) if blocker_obj else None,
+        })
+        item['count'] += 1
+        item['latest_confidence'] = max(item['latest_confidence'], float(entry.get('confidence', 0) or 0))
+        item['latest_probability'] = max(item['latest_probability'], float(entry.get('final_prob', 0) or 0))
+        item['last_seen'] = entry.get('timestamp') or item['last_seen']
+
+    results = []
+    for app_name, item in distracted.items():
+        item['is_blocked'] = app_name in blocked_set
+        item['is_manual_blocked'] = app_name in manual_set
+        item['is_auto_blocked'] = app_name in auto_set
+        item['auto_block_reason'] = getattr(agent, 'auto_blocked_reasons', {}).get(f"{app_name}.exe")
+        results.append(item)
+
+    results.sort(key=lambda item: (-item['count'], -item['latest_confidence'], item['app_name']))
+    return results
+
+
 def create_app(agent):
     app = Flask(__name__)
     CORS(app)
@@ -138,7 +191,17 @@ def create_app(agent):
             'is_blocking': bool(blocking),
             'is_admin': bool(is_admin),
             'blocked_sites': BLOCKED_SITES,
+            'blocked_apps': blocker_obj.get_manual_blocked_apps() if blocker_obj else [],
+            'auto_blocked_apps': blocker_obj.get_auto_blocked_apps() if blocker_obj else [],
+            'effective_blocked_apps': blocker_obj.get_effective_blocked_apps() if blocker_obj else [],
+            'auto_block_enabled': bool(getattr(agent, 'auto_block_enabled', True)),
+            'manual_override_enabled': bool(getattr(agent, 'manual_blocking_enabled', False)),
         }
+
+        blocker_info['distracted_apps'] = _summarize_distracted_apps(
+            agent,
+            blocker_info['effective_blocked_apps'],
+        )
 
         try:
             classifier_info = get_content_classifier().health()
@@ -195,18 +258,95 @@ def create_app(agent):
     @app.route('/api/block', methods=['POST'])
     def block():
         if hasattr(agent, 'blocker') and agent.blocker:
-            agent.blocker.enable()
-            agent.blocking_active = True
+            if hasattr(agent, 'set_manual_blocking'):
+                agent.set_manual_blocking(True)
+            else:
+                agent.blocker.enable()
+                agent.blocking_active = True
             return jsonify({'status': 'blocking_enabled'})
         return jsonify({'error': 'Blocker not available'}), 503
 
     @app.route('/api/unblock', methods=['POST'])
     def unblock():
         if hasattr(agent, 'blocker') and agent.blocker:
-            agent.blocker.disable()
-            agent.blocking_active = False
+            if hasattr(agent, 'set_manual_blocking'):
+                agent.set_manual_blocking(False)
+            else:
+                agent.blocker.disable()
+                agent.blocking_active = False
             return jsonify({'status': 'blocking_disabled'})
         return jsonify({'error': 'Blocker not available'}), 503
+
+    @app.route('/api/blocker/settings', methods=['POST'])
+    def update_blocker_settings():
+        data = request.get_json() or {}
+        if 'auto_block_enabled' not in data:
+            return jsonify({'error': 'auto_block_enabled is required'}), 400
+
+        enabled = bool(data.get('auto_block_enabled'))
+        if hasattr(agent, 'set_auto_block_enabled'):
+            agent.set_auto_block_enabled(enabled)
+        else:
+            agent.auto_block_enabled = enabled
+
+        blocker_obj = getattr(agent, 'blocker', None)
+        blocked_apps = blocker_obj.get_manual_blocked_apps() if blocker_obj else []
+        return jsonify({
+            'status': 'ok',
+            'auto_block_enabled': bool(getattr(agent, 'auto_block_enabled', enabled)),
+            'manual_override_enabled': bool(getattr(agent, 'manual_blocking_enabled', False)),
+            'is_blocking': bool(getattr(agent, 'blocking_active', False)),
+            'blocked_apps': blocked_apps,
+            'auto_blocked_apps': blocker_obj.get_auto_blocked_apps() if blocker_obj else [],
+            'effective_blocked_apps': blocker_obj.get_effective_blocked_apps() if blocker_obj else [],
+            'distracted_apps': _summarize_distracted_apps(
+                agent,
+                blocker_obj.get_effective_blocked_apps() if blocker_obj else [],
+            ),
+        })
+
+    @app.route('/api/blocker/apps')
+    def blocker_apps():
+        blocker_obj = getattr(agent, 'blocker', None)
+        blocked_apps = blocker_obj.get_manual_blocked_apps() if blocker_obj else []
+        return jsonify({
+            'blocked_apps': blocked_apps,
+            'auto_blocked_apps': blocker_obj.get_auto_blocked_apps() if blocker_obj else [],
+            'effective_blocked_apps': blocker_obj.get_effective_blocked_apps() if blocker_obj else [],
+            'distracted_apps': _summarize_distracted_apps(
+                agent,
+                blocker_obj.get_effective_blocked_apps() if blocker_obj else [],
+            ),
+        })
+
+    @app.route('/api/blocker/apps', methods=['POST'])
+    def update_blocker_app():
+        blocker_obj = getattr(agent, 'blocker', None)
+        if not blocker_obj:
+            return jsonify({'error': 'Blocker not available'}), 503
+
+        data = request.get_json() or {}
+        app_name = data.get('app_name', '')
+        action = data.get('action', '').strip().lower()
+        normalized_app = _normalize_app_name(app_name)
+
+        if not normalized_app:
+            return jsonify({'error': 'app_name is required'}), 400
+        if action not in {'block', 'unblock'}:
+            return jsonify({'error': 'action must be block or unblock'}), 400
+
+        if action == 'block':
+            blocked_apps = blocker_obj.add_blocked_app(normalized_app)
+        else:
+            blocked_apps = blocker_obj.remove_blocked_app(normalized_app)
+
+        return jsonify({
+            'status': 'ok',
+            'blocked_apps': blocked_apps,
+            'auto_blocked_apps': blocker_obj.get_auto_blocked_apps(),
+            'effective_blocked_apps': blocker_obj.get_effective_blocked_apps(),
+            'distracted_apps': _summarize_distracted_apps(agent, blocker_obj.get_effective_blocked_apps()),
+        })
 
     @app.route('/api/content/health')
     def content_health():

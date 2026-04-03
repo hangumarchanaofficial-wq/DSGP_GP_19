@@ -105,6 +105,110 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
+function LoadingDotWave() {
+  return (
+    <div className="flex items-center gap-2 mt-4">
+      {[0, 1, 2].map((idx) => (
+        <span
+          key={idx}
+          className="dashboard-loading-dot"
+          style={{ animationDelay: `${idx * 0.18}s` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function LoadingTimelineState() {
+  return (
+    <div className="dashboard-loading-shell h-full rounded-[24px] px-5 py-4">
+      <div className="flex items-end justify-between h-full gap-2">
+        {[46, 88, 58, 112, 76, 124, 92, 134, 108, 146, 118, 154].map((height, idx) => (
+          <div
+            key={idx}
+            className="dashboard-loading-bar"
+            style={{
+              height,
+              animationDelay: `${idx * 0.07}s`,
+              opacity: 0.35 + (idx % 5) * 0.1,
+            }}
+          />
+        ))}
+      </div>
+      <div className="dashboard-loading-overlay">
+        <div className="dashboard-loading-glow" />
+        <p className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+          Building your first prediction timeline
+        </p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+          The chart will animate in as soon as the model has enough snapshots.
+        </p>
+        <LoadingDotWave />
+      </div>
+    </div>
+  );
+}
+
+function LoadingDistributionState() {
+  return (
+    <div className="h-40 rounded-[24px] dashboard-loading-shell flex items-center justify-center gap-8 px-5">
+      <div className="dashboard-loading-ring">
+        <div className="dashboard-loading-ring-core" />
+      </div>
+      <div className="space-y-3 min-w-[150px]">
+        {[72, 58, 81, 49].map((width, idx) => (
+          <div key={idx} className="flex items-center gap-3">
+            <span
+              className="dashboard-loading-bullet"
+              style={{ animationDelay: `${idx * 0.12}s` }}
+            />
+            <span
+              className="dashboard-loading-line"
+              style={{ width: `${width}%`, animationDelay: `${idx * 0.08}s` }}
+            />
+          </div>
+        ))}
+        <p className="text-xs pt-2" style={{ color: 'var(--text-muted)' }}>
+          Collecting app signals...
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function LoadingRecentActivityState() {
+  return (
+    <div className="rounded-[24px] dashboard-loading-shell px-4 py-3">
+      <div className="space-y-2.5">
+        {[0, 1, 2, 3].map((rowIdx) => (
+          <div key={rowIdx} className="grid grid-cols-7 gap-3 items-center">
+            {[18, 26, 22, 20, 18, 24, 14].map((width, cellIdx) => (
+              <span
+                key={`${rowIdx}-${cellIdx}`}
+                className="dashboard-loading-line"
+                style={{
+                  width: `${width + rowIdx * 6}%`,
+                  animationDelay: `${(rowIdx * 7 + cellIdx) * 0.05}s`,
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center justify-center pt-6">
+        <div className="text-center">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+            Logging your first sessions
+          </p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+            Activity rows will appear as predictions are recorded.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Dashboard Page ───────────────────────────────── */
 export default function Dashboard() {
   const { dark } = useTheme();
@@ -132,6 +236,70 @@ export default function Dashboard() {
   const currentAppName = formatAppName(prediction?.dominant_app ?? currentSnapshot.current_app);
   const currentAppScore = prediction?.app_category ?? currentSnapshot.app_category_score ?? 0;
   const currentAppLabel = prediction?.label ?? (connected ? 'COLLECTING' : 'WAITING');
+  const blockerState = useMemo(() => {
+    if (!blocker) {
+      return {
+        headerLabel: 'Block Off',
+        cardValue: 'OFF',
+        detail: 'Blocker unavailable',
+        bg: 'var(--accent-bg)',
+        color: 'var(--accent)',
+        border: 'var(--accent)',
+        iconBg: 'var(--bg-elevated)',
+        iconColor: 'var(--text-muted)',
+      };
+    }
+
+    if (blocker.manual_override_enabled) {
+      return {
+        headerLabel: 'Manual Block On',
+        cardValue: 'MANUAL',
+        detail: 'Manual override is forcing blocker on',
+        bg: 'var(--danger-bg)',
+        color: 'var(--danger)',
+        border: 'var(--danger)',
+        iconBg: 'var(--danger-bg)',
+        iconColor: 'var(--danger)',
+      };
+    }
+
+    if (blocker.auto_block_enabled && blocker.is_blocking) {
+      return {
+        headerLabel: 'Auto-block Live',
+        cardValue: 'AUTO',
+        detail: 'Auto-block is actively responding',
+        bg: 'var(--warning-bg)',
+        color: 'var(--warning)',
+        border: 'var(--warning)',
+        iconBg: 'var(--warning-bg)',
+        iconColor: 'var(--warning)',
+      };
+    }
+
+    if (blocker.auto_block_enabled) {
+      return {
+        headerLabel: 'Auto-block Ready',
+        cardValue: 'ARMED',
+        detail: 'Auto-block is enabled and waiting',
+        bg: 'var(--accent-bg)',
+        color: 'var(--accent)',
+        border: 'var(--accent)',
+        iconBg: 'var(--accent-bg)',
+        iconColor: 'var(--accent)',
+      };
+    }
+
+    return {
+      headerLabel: 'Block Off',
+      cardValue: 'OFF',
+      detail: 'Auto-block is disabled',
+      bg: 'var(--bg-elevated)',
+      color: 'var(--text-muted)',
+      border: 'var(--border)',
+      iconBg: 'var(--bg-elevated)',
+      iconColor: 'var(--text-muted)',
+    };
+  }, [blocker]);
 
   // Timeline data
   const timelineData = useMemo(() => {
@@ -199,12 +367,12 @@ export default function Dashboard() {
               <button onClick={toggleBlocking} disabled={!connected}
                 className="flex items-center gap-2 px-4 h-9 rounded-full text-xs font-bold transition-all disabled:opacity-30 border"
                 style={{
-                  background: blocker?.is_blocking ? 'var(--danger-bg)' : 'var(--accent-bg)',
-                  color: blocker?.is_blocking ? 'var(--danger)' : 'var(--accent)',
-                  borderColor: blocker?.is_blocking ? 'var(--danger)' : 'var(--accent)',
+                  background: blockerState.bg,
+                  color: blockerState.color,
+                  borderColor: blockerState.border,
                 }}>
                 <Shield className="w-3.5 h-3.5" />
-                {blocker?.is_blocking ? 'Blocking On' : 'Block Off'}
+                {blockerState.headerLabel}
               </button>
             </div>
 
@@ -290,10 +458,10 @@ export default function Dashboard() {
                 sub={prediction ? label : 'No data'}
                 iconBg="var(--accent-bg)" iconColor="var(--accent)" />
               <StatCard icon={Shield} label="Blocker"
-                value={blocker?.is_blocking ? 'ON' : 'OFF'}
-                sub={`${blocker?.blocked_sites?.length ?? 0} sites blocked`}
-                iconBg={blocker?.is_blocking ? 'var(--success-bg)' : 'var(--bg-elevated)'}
-                iconColor={blocker?.is_blocking ? 'var(--success)' : 'var(--text-muted)'} />
+                value={blockerState.cardValue}
+                sub={blockerState.detail}
+                iconBg={blockerState.iconBg}
+                iconColor={blockerState.iconColor} />
               <StatCard icon={Database} label="Snapshots"
                 value={snapshots || 0} sub="1 per minute"
                 iconBg="var(--warning-bg)" iconColor="var(--warning)" />
@@ -341,9 +509,7 @@ export default function Dashboard() {
                   </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center">
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Waiting for prediction data...</p>
-                </div>
+                <LoadingTimelineState />
               )}
             </div>
           </div>
@@ -379,9 +545,7 @@ export default function Dashboard() {
                   </div>
                 </>
               ) : (
-                <div className="h-40 flex items-center justify-center">
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Collecting app data...</p>
-                </div>
+                <LoadingDistributionState />
               )}
             </div>
 
@@ -528,13 +692,140 @@ export default function Dashboard() {
                 </tbody>
               </table>
               {(!history || history.length === 0) && (
-                <div className="py-8 text-center">
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No activity logged yet</p>
+                <div className="pt-2">
+                  <LoadingRecentActivityState />
                 </div>
               )}
             </div>
           </div>
         </div>
+        <style>{`
+          .dashboard-loading-shell {
+            position: relative;
+            overflow: hidden;
+            background:
+              radial-gradient(circle at top left, rgba(99,102,241,0.14), transparent 34%),
+              radial-gradient(circle at bottom right, rgba(245,158,11,0.1), transparent 30%),
+              linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+            border: 1px solid rgba(255,255,255,0.06);
+          }
+
+          .dashboard-loading-shell::before {
+            content: "";
+            position: absolute;
+            inset: -20% auto -20% -35%;
+            width: 40%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+            transform: skewX(-18deg);
+            animation: dashboardShimmer 2.6s linear infinite;
+          }
+
+          .dashboard-loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            pointer-events: none;
+          }
+
+          .dashboard-loading-glow {
+            width: 140px;
+            height: 140px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(99,102,241,0.18), transparent 68%);
+            filter: blur(4px);
+            position: absolute;
+            animation: dashboardPulse 2.8s ease-in-out infinite;
+          }
+
+          .dashboard-loading-bar {
+            flex: 1 1 0%;
+            min-width: 12px;
+            border-radius: 999px 999px 4px 4px;
+            background: linear-gradient(180deg, rgba(139,92,246,0.88), rgba(59,130,246,0.18));
+            transform-origin: bottom center;
+            animation: dashboardFloatBars 2.2s ease-in-out infinite;
+          }
+
+          .dashboard-loading-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, #8b5cf6, #f59e0b);
+            animation: dashboardDotBounce 0.9s ease-in-out infinite;
+          }
+
+          .dashboard-loading-ring {
+            width: 92px;
+            height: 92px;
+            border-radius: 999px;
+            border: 10px solid rgba(99,102,241,0.1);
+            border-top-color: rgba(99,102,241,0.9);
+            border-right-color: rgba(245,158,11,0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: dashboardSpin 3s linear infinite;
+          }
+
+          .dashboard-loading-ring-core {
+            width: 38px;
+            height: 38px;
+            border-radius: 999px;
+            background: radial-gradient(circle, rgba(255,255,255,0.18), rgba(255,255,255,0.02));
+            box-shadow: 0 0 28px rgba(99,102,241,0.25);
+          }
+
+          .dashboard-loading-bullet {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(99,102,241,0.9);
+            box-shadow: 0 0 14px rgba(99,102,241,0.35);
+            animation: dashboardPulse 2.2s ease-in-out infinite;
+          }
+
+          .dashboard-loading-line {
+            display: block;
+            height: 10px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0.18), rgba(255,255,255,0.07));
+            animation: dashboardLineBreathe 2.4s ease-in-out infinite;
+          }
+
+          @keyframes dashboardShimmer {
+            0% { transform: translateX(-10%) skewX(-18deg); }
+            100% { transform: translateX(360%) skewX(-18deg); }
+          }
+
+          @keyframes dashboardPulse {
+            0%, 100% { opacity: 0.45; transform: scale(0.96); }
+            50% { opacity: 0.9; transform: scale(1.04); }
+          }
+
+          @keyframes dashboardFloatBars {
+            0%, 100% { transform: scaleY(0.86); }
+            50% { transform: scaleY(1.04); }
+          }
+
+          @keyframes dashboardDotBounce {
+            0%, 100% { transform: translateY(0); opacity: 0.5; }
+            50% { transform: translateY(-5px); opacity: 1; }
+          }
+
+          @keyframes dashboardSpin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+
+          @keyframes dashboardLineBreathe {
+            0%, 100% { opacity: 0.45; transform: scaleX(0.98); }
+            50% { opacity: 0.95; transform: scaleX(1); }
+          }
+        `}</style>
         <Footer />
       </main>
     </div>

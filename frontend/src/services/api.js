@@ -34,6 +34,34 @@ export const agentAPI = {
     return res.json();
   },
 
+  async getBlockerApps() {
+    const res = await fetch(`${API_BASE}/blocker/apps`);
+    if (!res.ok) throw new Error('Failed to load blocker apps');
+    return res.json();
+  },
+
+  async updateBlockedApp(appName, action) {
+    const res = await fetch(`${API_BASE}/blocker/apps`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_name: appName, action }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update blocked app');
+    return data;
+  },
+
+  async updateBlockerSettings(payload) {
+    const res = await fetch(`${API_BASE}/blocker/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to update blocker settings');
+    return data;
+  },
+
   async getContentHealth() {
     const res = await fetch(`${API_BASE}/content/health`);
     return res.json();
