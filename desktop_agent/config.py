@@ -5,22 +5,21 @@ SDPPS – Desktop Agent Configuration
 from pathlib import Path
 
 # ── Paths ────────────────────────────────────────────────────────────────
-BASE_DIR = Path(r"E:\SDPPS")
-MODEL_PATH = BASE_DIR / "distraction_prediction" / "models" / "saved_models" / "best_model.pt"
-SCALER_PATH = BASE_DIR / "distraction_prediction" / "data" / "processed" / "windows" / "scaler_zscore.json"
+# BASE_DIR resolves to the repo root (the folder containing desktop_agent/)
+# This works on ANY machine regardless of where the repo is cloned.
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+MODEL_PATH           = BASE_DIR / "distraction_prediction" / "models" / "saved_models" / "best_model.pt"
+SCALER_PATH          = BASE_DIR / "distraction_prediction" / "data" / "processed" / "windows" / "scaler_zscore.json"
 FEATURE_COLUMNS_PATH = BASE_DIR / "distraction_prediction" / "data" / "processed" / "windows" / "feature_columns.json"
 
 # ── Agent Settings ───────────────────────────────────────────────────────
-COLLECT_INTERVAL = 60         
-DISTRACTION_THRESHOLD = 0.5     
+COLLECT_INTERVAL      = 60       # seconds between snapshots
+DISTRACTION_THRESHOLD = 0.5      # probability threshold for DISTRACTED label
 
-
-
-BLEND_MODE = "adaptive"
-
+BLEND_MODE = "adaptive"          # options: "pure" | "light" | "adaptive"
 
 # ── Blocker Settings ─────────────────────────────────────────────────────
-BLOCKED_APPS = ["spotify.exe", "vlc.exe", "kmplayer.exe"]
-BLOCKED_SITES = ["youtube.com", "netflix.com", "tiktok.com", "instagram.com"]
+BLOCKED_APPS    = ["spotify.exe", "vlc.exe", "kmplayer.exe"]
+BLOCKED_SITES   = ["youtube.com", "netflix.com", "tiktok.com", "instagram.com"]
 PRODUCTIVE_APPS = ["pycharm64.exe", "code.exe", "devenv.exe", "excel.exe", "winword.exe"]
-
