@@ -60,8 +60,6 @@ def _parse_planner_datetime(value):
         '%Y-%m-%d %H:%M:%S',
         '%Y-%m-%dT%H:%M:%S',
         '%Y-%m-%dT%H:%M:%S.%f',
-        '%Y-%m-%dT%H:%M:%SZ',
-        '%Y-%m-%dT%H:%M:%S.%fZ',
     ]
     for fmt in candidates:
         try:
@@ -69,7 +67,10 @@ def _parse_planner_datetime(value):
         except Exception:
             continue
     try:
-        return datetime.fromisoformat(text.replace('Z', '+00:00'))
+        parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+        if parsed.tzinfo is not None:
+            return parsed.astimezone().replace(tzinfo=None)
+        return parsed
     except Exception:
         return None
 

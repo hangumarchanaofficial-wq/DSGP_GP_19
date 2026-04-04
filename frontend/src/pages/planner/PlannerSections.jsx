@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
 } from "lucide-react";
-import { getTaskStartTime } from "./plannerUtils";
+import { getPlannerApiUrl, getTaskStartTime } from "./plannerUtils";
 
 // Shared planner UI sections live here so the main page is easier to present.
 export function ProbabilityRing({ value, size = 180 }) {
@@ -100,7 +100,7 @@ export function FocusTimer({
     const interval = setInterval(async () => {
       if (Date.now() < notificationsMutedUntil) return;
       try {
-        const res = await fetch("/api/planner/check-missed", {
+        const res = await fetch(getPlannerApiUrl("/api/planner/check-missed"), {
           method: "POST",
         });
 
@@ -160,7 +160,7 @@ export function FocusTimer({
       }
 
       const actionRes = await fetch(
-        `/api/planner/tasks/${activeMissedTask.id}/handle-missed`,
+        getPlannerApiUrl(`/api/planner/tasks/${activeMissedTask.id}/handle-missed`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
