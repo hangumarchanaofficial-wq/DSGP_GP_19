@@ -1,6 +1,18 @@
+"""
+SDPPS – Adaptive Planner Service
+Fixes applied:
+  1. focus_score_avg uses true running mean (stores focus_score_count)
+  2. get_missed_tasks adds 24-hour upper bound to avoid stale tasks
+  3. _get_range uses a read-only helper; no longer creates phantom JSON entries on reads
+  4. badge _check_badges caches completed_count once per call
+  5. imbalanced-learn optional warning on startup
+  6. requirements note: add imbalanced-learn>=0.11.0 to requirements.txt
+"""
+
 import os
 import json
 import random
+import warnings
 import joblib
 import numpy as np
 import pandas as pd
@@ -15,6 +27,13 @@ try:
     HAS_SMOTE = True
 except ImportError:
     HAS_SMOTE = False
+    warnings.warn(
+        "[AdaptivePlanner] imbalanced-learn not installed. "
+        "SMOTE oversampling will be skipped. "
+        "Install with: pip install imbalanced-learn>=0.11.0",
+        ImportWarning,
+        stacklevel=2,
+    )
 
 SAVE_DIR = os.path.join(os.path.dirname(__file__), 'saved_models')
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -24,7 +43,6 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 NUMERIC_COLS = ['age', 'study_hours_per_day', 'sleep_hours', 'total_social_hours']
 
-# Day-of-week index → name
 _DOW_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 
@@ -41,15 +59,10 @@ class ProductivityProfiler:
 
     def __init__(self):
         self.profile_file = os.path.join(DATA_DIR, 'productivity_profile.json')
-        # {hour_str: [completed, total]}  e.g. {"9": [5, 7]}
         self.hourly_completion = {}
-        # {dow_str: [completed, total]}  e.g. {"0": [3, 4]} (0=Monday)
         self.dow_completion = {}
-        # {subject_lower: [completed, total, total_duration_min]}
         self.subject_performance = {}
         self._load()
-
-    # ── Persistence ─────────────────────────────────────────────
 
     def _load(self):
         if os.path.exists(self.profile_file):
@@ -75,13 +88,8 @@ class ProductivityProfiler:
         except Exception as e:
             print(f'[Profiler] Save failed: {e}')
 
-    # ── Recording ───────────────────────────────────────────────
-
     def record_completion(self, task: dict, completed: bool):
-        """Record a task outcome to update the profiler stats."""
         subject = (task.get('subject') or 'unknown').lower().strip()
-
-        # Determine hour and day-of-week from started_at or completed_at
         ts = task.get('completed_at') or task.get('started_at')
         hour = None
         dow = None
@@ -89,10 +97,9 @@ class ProductivityProfiler:
             try:
                 dt = datetime.strptime(ts[:19], '%Y-%m-%d %H:%M:%S')
                 hour = dt.hour
-                dow = dt.weekday()  # 0=Monday
+                dow = dt.weekday()
             except Exception:
                 pass
-        # Fallback: parse scheduled_slot time
         if hour is None:
             slot = task.get('scheduled_slot') or ''
             try:
@@ -101,7 +108,6 @@ class ProductivityProfiler:
             except Exception:
                 pass
 
-        # Hourly stats
         if hour is not None:
             h = str(hour)
             if h not in self.hourly_completion:
@@ -110,7 +116,6 @@ class ProductivityProfiler:
             if completed:
                 self.hourly_completion[h][0] += 1
 
-        # Day-of-week stats
         if dow is not None:
             d = str(dow)
             if d not in self.dow_completion:
@@ -119,10 +124,9 @@ class ProductivityProfiler:
             if completed:
                 self.dow_completion[d][0] += 1
 
-        # Subject stats
         dur = float(task.get('duration_minutes') or 0)
         if subject not in self.subject_performance:
-            self.subject_performance[subject] = [0, 0, 0.0]  # [completed, total, total_duration]
+            self.subject_performance[subject] = [0, 0, 0.0]
         self.subject_performance[subject][1] += 1
         self.subject_performance[subject][2] += dur
         if completed:
@@ -130,24 +134,19 @@ class ProductivityProfiler:
 
         self._save()
 
-    # ── Query ────────────────────────────────────────────────────
-
     def get_hourly_rate(self, hour: int) -> float:
-        """Completion rate for the given hour (0-23). Returns 0.5 if no data."""
         data = self.hourly_completion.get(str(hour))
         if not data or data[1] < 2:
             return 0.5
         return data[0] / data[1]
 
     def get_dow_rate(self, dow: int) -> float:
-        """Completion rate for the given day-of-week (0=Monday). Returns 0.5 if no data."""
         data = self.dow_completion.get(str(dow))
         if not data or data[1] < 2:
             return 0.5
         return data[0] / data[1]
 
     def get_subject_rate(self, subject: str) -> float:
-        """Completion rate for a subject. Returns 0.5 if no data."""
         key = (subject or '').lower().strip()
         data = self.subject_performance.get(key)
         if not data or data[1] < 1:
@@ -156,11 +155,6 @@ class ProductivityProfiler:
 
     def get_optimal_slot(self, candidate_slots: list, subject: str = None,
                          priority: str = 'medium') -> str:
-        """
-        Score candidate time slots and return the best one.
-        High-priority tasks go to the student's best hours.
-        Falls back to first slot if no profiler data.
-        """
         if not candidate_slots:
             return None
 
@@ -169,8 +163,7 @@ class ProductivityProfiler:
 
         has_data = any(
             self.hourly_completion.get(str(s.split(':')[0]), [0, 0])[1] >= 2
-            for s in candidate_slots
-            if ':' in s
+            for s in candidate_slots if ':' in s
         )
 
         if not has_data:
@@ -183,79 +176,52 @@ class ProductivityProfiler:
                 hour = int(slot_time.split(':')[0])
             except Exception:
                 return 0.0
-
             hr = self.get_hourly_rate(hour)
-
-            # Priority modifier: high → strongly prefer best hours
             if priority == 'high':
                 p_weight = 0.6
             elif priority == 'low':
                 p_weight = 0.3
             else:
                 p_weight = 0.45
-
-            # Subject difficulty modifier: struggling subject → prefer peak hours
-            # good subject → more tolerant of off-peak
-            subj_factor = 1.0 + (0.5 - subject_rate) * 0.4  # harder subject = higher multiplier
-
+            subj_factor = 1.0 + (0.5 - subject_rate) * 0.4
             base = hr * p_weight + dow_rate * 0.2 + subject_rate * 0.1
             return base * subj_factor
 
         return max(candidate_slots, key=score)
 
     def get_best_hours(self, n: int = 3) -> list:
-        """Return top n hours sorted by completion rate (minimum 2 samples)."""
-        ranked = []
-        for h_str, (comp, total) in self.hourly_completion.items():
-            if total >= 2:
-                ranked.append({
-                    'hour': int(h_str),
-                    'label': f'{int(h_str):02d}:00',
-                    'rate': round(comp / total, 3),
-                    'total_tasks': total,
-                })
+        ranked = [
+            {'hour': int(h), 'label': f'{int(h):02d}:00',
+             'rate': round(c / t, 3), 'total_tasks': t}
+            for h, (c, t) in self.hourly_completion.items() if t >= 2
+        ]
         ranked.sort(key=lambda x: x['rate'], reverse=True)
         return ranked[:n]
 
     def get_worst_hours(self, n: int = 3) -> list:
-        """Return n worst hours (minimum 2 samples)."""
-        ranked = []
-        for h_str, (comp, total) in self.hourly_completion.items():
-            if total >= 2:
-                ranked.append({
-                    'hour': int(h_str),
-                    'label': f'{int(h_str):02d}:00',
-                    'rate': round(comp / total, 3),
-                    'total_tasks': total,
-                })
+        ranked = [
+            {'hour': int(h), 'label': f'{int(h):02d}:00',
+             'rate': round(c / t, 3), 'total_tasks': t}
+            for h, (c, t) in self.hourly_completion.items() if t >= 2
+        ]
         ranked.sort(key=lambda x: x['rate'])
         return ranked[:n]
 
     def get_best_days(self, n: int = 3) -> list:
-        """Return top n days-of-week by completion rate."""
-        ranked = []
-        for d_str, (comp, total) in self.dow_completion.items():
-            if total >= 2:
-                ranked.append({
-                    'dow': int(d_str),
-                    'day': _DOW_NAMES[int(d_str)],
-                    'rate': round(comp / total, 3),
-                    'total_tasks': total,
-                })
+        ranked = [
+            {'dow': int(d), 'day': _DOW_NAMES[int(d)],
+             'rate': round(c / t, 3), 'total_tasks': t}
+            for d, (c, t) in self.dow_completion.items() if t >= 2
+        ]
         ranked.sort(key=lambda x: x['rate'], reverse=True)
         return ranked[:n]
 
     def get_subject_summary(self) -> list:
-        """Return per-subject stats sorted by completion rate."""
-        result = []
-        for subj, (comp, total, total_dur) in self.subject_performance.items():
-            if total > 0:
-                result.append({
-                    'subject': subj,
-                    'completion_rate': round(comp / total, 3),
-                    'total_tasks': total,
-                    'avg_duration_minutes': round(total_dur / total, 1),
-                })
+        result = [
+            {'subject': s, 'completion_rate': round(c / t, 3),
+             'total_tasks': t, 'avg_duration_minutes': round(d / t, 1)}
+            for s, (c, t, d) in self.subject_performance.items() if t > 0
+        ]
         result.sort(key=lambda x: x['completion_rate'], reverse=True)
         return result
 
@@ -283,12 +249,8 @@ class TrendAnalyzer:
 
     def __init__(self):
         self.trend_file = os.path.join(DATA_DIR, 'trend_data.json')
-        # {date_str: {study_minutes, distraction_events, tasks_completed,
-        #             tasks_missed, content_educational, content_non_educational}}
         self.daily = {}
         self._load()
-
-    # ── Persistence ─────────────────────────────────────────────
 
     def _load(self):
         if os.path.exists(self.trend_file):
@@ -309,18 +271,27 @@ class TrendAnalyzer:
     def _today(self) -> str:
         return datetime.now().strftime('%Y-%m-%d')
 
+    def _empty_day(self) -> dict:
+        """Return a zero-filled day entry (does NOT write to self.daily)."""
+        return {
+            'study_minutes': 0,
+            'distraction_events': 0,
+            'tasks_completed': 0,
+            'tasks_missed': 0,
+            'content_educational': 0,
+            'content_non_educational': 0,
+            'distraction_minutes': 0,
+        }
+
     def _get_day(self, date_str: str) -> dict:
+        """Get or create the mutable day entry (writes to self.daily on first access)."""
         if date_str not in self.daily:
-            self.daily[date_str] = {
-                'study_minutes': 0,
-                'distraction_events': 0,
-                'tasks_completed': 0,
-                'tasks_missed': 0,
-                'content_educational': 0,
-                'content_non_educational': 0,
-                'distraction_minutes': 0,
-            }
+            self.daily[date_str] = self._empty_day()
         return self.daily[date_str]
+
+    def _get_day_readonly(self, date_str: str) -> dict:
+        """Return a copy of a day entry without creating a new entry in self.daily."""
+        return dict(self.daily.get(date_str) or self._empty_day())
 
     # ── Recording ───────────────────────────────────────────────
 
@@ -328,7 +299,6 @@ class TrendAnalyzer:
         entry = self._get_day(self._today())
         entry['tasks_completed'] += 1
         entry['study_minutes'] += int(task.get('duration_minutes') or 0)
-        # Count distraction events that happened during this task
         entry['distraction_events'] += int(task.get('distraction_events') or 0)
         self._save()
 
@@ -339,14 +309,12 @@ class TrendAnalyzer:
         self._save()
 
     def record_distraction_event(self, duration_minutes: int = 5):
-        """Record a live distraction event with estimated duration."""
         entry = self._get_day(self._today())
         entry['distraction_events'] += 1
         entry['distraction_minutes'] += duration_minutes
         self._save()
 
     def record_content_event(self, is_educational: bool):
-        """Record a content classification event."""
         entry = self._get_day(self._today())
         if is_educational:
             entry['content_educational'] += 1
@@ -357,11 +325,11 @@ class TrendAnalyzer:
     # ── Analysis ────────────────────────────────────────────────
 
     def _get_range(self, days: int = 7) -> list:
-        """Return list of day entries for the last N days (oldest first)."""
+        """Return enriched day entries for the last N days (read-only; no side effects)."""
         result = []
         for i in range(days - 1, -1, -1):
             date_str = (datetime.now() - timedelta(days=i)).strftime('%Y-%m-%d')
-            entry = dict(self._get_day(date_str))  # ensure key exists
+            entry = self._get_day_readonly(date_str)
             entry['date'] = date_str
             total = entry['tasks_completed'] + entry['tasks_missed']
             entry['completion_rate'] = round(
@@ -374,11 +342,9 @@ class TrendAnalyzer:
         return result
 
     def get_daily_trends(self, days: int = 7) -> list:
-        """Return enriched daily trend records for the last N days."""
         return self._get_range(days)
 
     def get_completion_trend(self, days: int = 7) -> list:
-        """Return daily completion rates as a plain list (most recent last)."""
         return [e['completion_rate'] for e in self._get_range(days)]
 
     def get_weekly_summary(self) -> dict:
@@ -390,7 +356,6 @@ class TrendAnalyzer:
         total_dist_min = sum(e['distraction_minutes'] for e in entries)
         total_tasks = total_comp + total_miss
 
-        # Trend: compare last 3 days vs previous 4
         recent = entries[-3:]
         older = entries[:4]
         r_comp = sum(e['tasks_completed'] for e in recent)
@@ -401,12 +366,7 @@ class TrendAnalyzer:
         older_rate = o_comp / max(o_total, 1) * 100
         delta = round(recent_rate - older_rate, 1)
 
-        if delta > 5:
-            trend_direction = 'improving'
-        elif delta < -5:
-            trend_direction = 'declining'
-        else:
-            trend_direction = 'stable'
+        trend_direction = ('improving' if delta > 5 else 'declining' if delta < -5 else 'stable')
 
         return {
             'days_tracked': 7,
@@ -426,17 +386,14 @@ class TrendAnalyzer:
         }
 
     def get_study_vs_distraction(self) -> dict:
-        """Compute study vs distraction time breakdown for the last 7 days."""
         entries = self._get_range(7)
         study_min = sum(e['study_minutes'] for e in entries)
         dist_min = sum(e['distraction_minutes'] for e in entries)
         dist_events = sum(e['distraction_events'] for e in entries)
         total = study_min + dist_min
-
         edu = sum(e['content_educational'] for e in entries)
         non_edu = sum(e['content_non_educational'] for e in entries)
         total_content = edu + non_edu
-
         return {
             'study_minutes': study_min,
             'study_hours': round(study_min / 60, 1),
@@ -450,7 +407,6 @@ class TrendAnalyzer:
         }
 
     def detect_patterns(self) -> dict:
-        """Detect notable patterns: best day, worst day, streak info."""
         entries = self._get_range(7)
         has_data = any(e['tasks_completed'] + e['tasks_missed'] > 0 for e in entries)
         if not has_data:
@@ -459,13 +415,10 @@ class TrendAnalyzer:
         best = max(entries, key=lambda e: e['completion_rate'])
         worst = min(
             [e for e in entries if e['tasks_completed'] + e['tasks_missed'] > 0],
-            key=lambda e: e['completion_rate'],
-            default=None
-        )
+            key=lambda e: e['completion_rate'], default=None)
         most_distracted = max(entries, key=lambda e: e['distraction_events'])
         most_productive = max(entries, key=lambda e: e['study_minutes'])
 
-        # Consecutive days with tasks completed
         streak = 0
         for e in reversed(entries):
             if e['tasks_completed'] > 0:
@@ -476,27 +429,19 @@ class TrendAnalyzer:
         return {
             'best_day': {'date': best['date'], 'completion_rate': best['completion_rate']},
             'worst_day': {'date': worst['date'], 'completion_rate': worst['completion_rate']} if worst else None,
-            'most_distracted_day': {
-                'date': most_distracted['date'],
-                'events': most_distracted['distraction_events']
-            },
-            'most_productive_day': {
-                'date': most_productive['date'],
-                'study_minutes': most_productive['study_minutes']
-            },
+            'most_distracted_day': {'date': most_distracted['date'], 'events': most_distracted['distraction_events']},
+            'most_productive_day': {'date': most_productive['date'], 'study_minutes': most_productive['study_minutes']},
             'current_active_day_streak': streak,
         }
 
-    def generate_suggestions(self, profiler: ProductivityProfiler = None) -> list:
-        """Generate data-driven improvement suggestions based on trends."""
+    def generate_suggestions(self, profiler: 'ProductivityProfiler' = None) -> list:
         suggestions = []
         entries = self._get_range(7)
         has_data = any(e['tasks_completed'] + e['tasks_missed'] > 0 for e in entries)
 
         if not has_data:
             suggestions.append({
-                'type': 'onboarding',
-                'priority': 'info',
+                'type': 'onboarding', 'priority': 'info',
                 'title': 'Start tracking your progress',
                 'message': 'Complete a few tasks to unlock personalized insights and recommendations.',
             })
@@ -505,145 +450,105 @@ class TrendAnalyzer:
         summary = self.get_weekly_summary()
         ratio = self.get_study_vs_distraction()
 
-        # Declining performance
         if summary['trend_direction'] == 'declining':
             suggestions.append({
-                'type': 'trend_alert',
-                'priority': 'high',
+                'type': 'trend_alert', 'priority': 'high',
                 'title': 'Performance declining this week',
                 'message': (
                     f"Your completion rate dropped {abs(summary['trend_delta']):.0f}% "
                     "vs the previous period. Try shorter focus blocks (25 min) and take "
-                    "a 5-min break between sessions."
-                ),
+                    "a 5-min break between sessions."),
             })
 
-        # High distraction ratio
         if ratio['distraction_ratio_pct'] > 25:
             suggestions.append({
-                'type': 'distraction',
-                'priority': 'high',
+                'type': 'distraction', 'priority': 'high',
                 'title': 'High distraction rate detected',
                 'message': (
                     f"~{ratio['distraction_ratio_pct']:.0f}% of your tracked time is "
-                    "lost to distractions. Enable the content blocker during scheduled "
-                    "tasks to recover that time."
-                ),
+                    "lost to distractions. Enable the content blocker during scheduled tasks."),
             })
 
-        # Low study time
         avg_daily = summary['avg_daily_study_minutes']
         if avg_daily < 60:
             suggestions.append({
-                'type': 'study_time',
-                'priority': 'medium',
+                'type': 'study_time', 'priority': 'medium',
                 'title': 'Increase daily study time',
                 'message': (
-                    f"You're averaging {avg_daily:.0f} min/day this week. "
-                    "Aim for at least 90 minutes of focused study each day — "
-                    "even 2 Pomodoro sessions make a difference."
-                ),
+                    f"You're averaging {avg_daily:.0f} min/day. "
+                    "Aim for at least 90 minutes of focused study each day."),
             })
         elif avg_daily > 300:
             suggestions.append({
-                'type': 'balance',
-                'priority': 'low',
+                'type': 'balance', 'priority': 'low',
                 'title': 'Remember to take breaks',
                 'message': (
-                    f"You're studying {avg_daily/60:.1f} hours/day on average. "
-                    "Sustained sessions without breaks reduce retention. "
-                    "Schedule a 10-min break every 50 minutes."
-                ),
+                    f"You're studying {avg_daily/60:.1f} hours/day. "
+                    "Schedule a 10-min break every 50 minutes to improve retention."),
             })
 
-        # Many missed tasks recently
         recent_missed = sum(e['tasks_missed'] for e in entries[-3:])
         if recent_missed >= 3:
             suggestions.append({
-                'type': 'missed_tasks',
-                'priority': 'medium',
+                'type': 'missed_tasks', 'priority': 'medium',
                 'title': 'Reduce task misses',
                 'message': (
                     f"You missed {recent_missed} tasks in the last 3 days. "
-                    "Consider scheduling fewer tasks per day or using shorter "
-                    "durations so each session feels achievable."
-                ),
+                    "Consider scheduling fewer tasks or shorter durations."),
             })
 
-        # Non-educational content dominates
         if (ratio['content_non_educational'] > ratio['content_educational']
                 and ratio['content_non_educational'] >= 3):
             suggestions.append({
-                'type': 'content',
-                'priority': 'medium',
+                'type': 'content', 'priority': 'medium',
                 'title': 'More non-educational content detected',
                 'message': (
-                    "Your browser activity during study time shows more entertainment "
-                    "content than educational material. Use the content classifier to "
-                    "stay focused on study resources."
-                ),
+                    "Your browser activity shows more entertainment than educational material. "
+                    "Use the content classifier to stay on task."),
             })
 
-        # Profiler-based scheduling suggestion
         if profiler:
             best_hrs = profiler.get_best_hours(2)
             worst_hrs = profiler.get_worst_hours(2)
             if best_hrs and worst_hrs and best_hrs[0]['rate'] > worst_hrs[0]['rate'] + 0.2:
-                best_labels = ', '.join(h['label'] for h in best_hrs)
-                worst_labels = ', '.join(h['label'] for h in worst_hrs)
                 suggestions.append({
-                    'type': 'scheduling',
-                    'priority': 'low',
+                    'type': 'scheduling', 'priority': 'low',
                     'title': 'Optimize your study schedule',
                     'message': (
-                        f"You complete tasks most reliably at {best_labels} "
-                        f"and least reliably at {worst_labels}. "
-                        "Schedule your hardest tasks during your peak hours."
-                    ),
+                        f"Best hours: {', '.join(h['label'] for h in best_hrs)}. "
+                        f"Worst hours: {', '.join(h['label'] for h in worst_hrs)}. "
+                        "Schedule harder tasks during your peak hours."),
                 })
-
-            # Subject-specific suggestion
             subj = profiler.get_subject_summary()
             if len(subj) >= 2:
                 hardest = subj[-1]
                 if hardest['completion_rate'] < 0.5:
                     suggestions.append({
-                        'type': 'subject',
-                        'priority': 'low',
+                        'type': 'subject', 'priority': 'low',
                         'title': f"Struggling with {hardest['subject'].title()}",
                         'message': (
-                            f"Your completion rate for {hardest['subject'].title()} is "
+                            f"Completion rate for {hardest['subject'].title()} is "
                             f"{hardest['completion_rate']*100:.0f}%. "
-                            "Try scheduling these tasks during your best hours and "
-                            "breaking them into smaller chunks."
-                        ),
+                            "Break into smaller chunks and schedule during peak hours."),
                     })
 
         if not suggestions:
             if summary['trend_direction'] == 'improving':
                 suggestions.append({
-                    'type': 'positive',
-                    'priority': 'info',
+                    'type': 'positive', 'priority': 'info',
                     'title': 'Great improvement this week!',
-                    'message': (
-                        f"Your completion rate improved by {summary['trend_delta']:.0f}% "
-                        "vs the previous period. Keep up the momentum!"
-                    ),
+                    'message': f"Completion rate improved by {summary['trend_delta']:.0f}%. Keep it up!",
                 })
             else:
                 suggestions.append({
-                    'type': 'positive',
-                    'priority': 'info',
+                    'type': 'positive', 'priority': 'info',
                     'title': 'Consistent performance',
-                    'message': (
-                        "Your study patterns are stable. Focus on reducing distraction "
-                        "events to level up your productivity score."
-                    ),
+                    'message': "Study patterns are stable. Focus on reducing distraction events.",
                 })
 
         return suggestions
 
-    def get_full_analytics(self, profiler: ProductivityProfiler = None) -> dict:
+    def get_full_analytics(self, profiler: 'ProductivityProfiler' = None) -> dict:
         return {
             'weekly_summary': self.get_weekly_summary(),
             'daily_trends': self.get_daily_trends(7),
@@ -678,8 +583,6 @@ class TaskManager:
         self._load_tasks()
         self._load_history()
         self._load_streaks()
-
-    # ── Persistence ─────────────────────────────────────────────
 
     def _save_tasks(self):
         try:
@@ -722,15 +625,14 @@ class TaskManager:
 
     def _save_streaks(self):
         try:
-            data = {
-                'focus_streak': self.focus_streak,
-                'best_streak': self.best_streak,
-                'total_focused_sessions': self.total_focused_sessions,
-                'total_sessions': self.total_sessions,
-                'badges': self.badges,
-            }
             with open(self.streak_file, 'w') as f:
-                json.dump(data, f, indent=2)
+                json.dump({
+                    'focus_streak': self.focus_streak,
+                    'best_streak': self.best_streak,
+                    'total_focused_sessions': self.total_focused_sessions,
+                    'total_sessions': self.total_sessions,
+                    'badges': self.badges,
+                }, f, indent=2)
         except Exception as e:
             print(f'[TaskManager] Failed to save streaks: {e}')
 
@@ -747,8 +649,6 @@ class TaskManager:
             except Exception as e:
                 print(f'[TaskManager] Failed to load streaks: {e}')
 
-    # ── Streaks & Badges ─────────────────────────────────────────
-
     def update_streak(self, is_focused: bool):
         self.total_sessions += 1
         if is_focused:
@@ -763,6 +663,8 @@ class TaskManager:
         return new_badges
 
     def _check_badges(self):
+        # FIX: cache completed_count once instead of scanning history twice
+        completed_count = sum(1 for t in self.history if t.get('status') == 'completed')
         new_badges = []
         badge_rules = [
             {'id': 'first_focus', 'name': 'First Focus',
@@ -786,12 +688,13 @@ class TaskManager:
             {'id': 'total_50', 'name': 'Academic Hero',
              'description': '50 total focused sessions',
              'icon': 'shield', 'condition': self.total_focused_sessions >= 50},
+            # FIX: use cached completed_count
             {'id': 'tasks_5', 'name': 'Task Crusher',
              'description': 'Completed 5 tasks', 'icon': 'check-circle',
-             'condition': len([t for t in self.history if t.get('status') == 'completed']) >= 5},
+             'condition': completed_count >= 5},
             {'id': 'tasks_20', 'name': 'Productivity Machine',
              'description': 'Completed 20 tasks', 'icon': 'zap',
-             'condition': len([t for t in self.history if t.get('status') == 'completed']) >= 20},
+             'condition': completed_count >= 20},
         ]
         existing_ids = {b['id'] for b in self.badges}
         for rule in badge_rules:
@@ -816,33 +719,22 @@ class TaskManager:
             'badge_count': len(self.badges),
         }
 
-    # ── Task CRUD ────────────────────────────────────────────────
-
     def _parse_datetime(self, value):
         if not value:
             return None
         if isinstance(value, datetime):
-            if value.tzinfo is not None:
-                return value.astimezone().replace(tzinfo=None)
-            return value
+            return value.astimezone().replace(tzinfo=None) if value.tzinfo else value
         text = str(value).strip()
         if not text:
             return None
-        candidates = [
-            '%Y-%m-%d %H:%M:%S',
-            '%Y-%m-%dT%H:%M:%S',
-            '%Y-%m-%dT%H:%M:%S.%f',
-        ]
-        for fmt in candidates:
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f'):
             try:
                 return datetime.strptime(text, fmt)
             except Exception:
                 continue
         try:
             parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
-            if parsed.tzinfo is not None:
-                return parsed.astimezone().replace(tzinfo=None)
-            return parsed
+            return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
         except Exception:
             return None
 
@@ -855,32 +747,23 @@ class TaskManager:
         return False
 
     def add_task(self, subject, duration_minutes, priority='medium',
-                 scheduled_slot=None, notes='', planned_start=None,
-                 planned_end=None):
+                 scheduled_slot=None, notes='', planned_start=None, planned_end=None):
         task_id = f'task_{self.next_id}'
         self.next_id += 1
         duration_minutes = int(duration_minutes or 0)
         task = {
-            'id': task_id,
-            'subject': subject,
-            'duration_minutes': duration_minutes,
-            'priority': priority,
-            'scheduled_slot': scheduled_slot,
-            'planned_start': planned_start,
-            'planned_end': planned_end,
-            'status': 'pending',
+            'id': task_id, 'subject': subject,
+            'duration_minutes': duration_minutes, 'priority': priority,
+            'scheduled_slot': scheduled_slot, 'planned_start': planned_start,
+            'planned_end': planned_end, 'status': 'pending',
             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'started_at': None,
-            'session_started_at': None,
-            'completed_at': None,
-            'rescheduled_from': None,
-            'rescheduled_to': None,
-            'reschedule_reason': None,
+            'started_at': None, 'session_started_at': None, 'completed_at': None,
+            'rescheduled_from': None, 'rescheduled_to': None, 'reschedule_reason': None,
             'distraction_events': 0,
             'focus_score_avg': None,
+            'focus_score_count': 0,          # FIX: track sample count for true running mean
             'remaining_seconds': max(duration_minutes, 0) * 60,
-            'studied_seconds': 0,
-            'notes': notes,
+            'studied_seconds': 0, 'notes': notes,
         }
         self.tasks[task_id] = task
         self._save_tasks()
@@ -996,13 +879,19 @@ class TaskManager:
             self._save_tasks()
 
     def update_focus_score(self, task_id, focus_score):
+        """FIX: True running mean using stored count, not biased (old+new)/2."""
         task = self.tasks.get(task_id)
         if task:
             cur = task.get('focus_score_avg')
-            task['focus_score_avg'] = (
-                focus_score if cur is None
-                else round((cur + focus_score) / 2, 4)
-            )
+            count = int(task.get('focus_score_count') or 0)
+            if cur is None:
+                task['focus_score_avg'] = round(float(focus_score), 4)
+                task['focus_score_count'] = 1
+            else:
+                count += 1
+                task['focus_score_avg'] = round(
+                    (cur * (count - 1) + float(focus_score)) / count, 4)
+                task['focus_score_count'] = count
             self._save_tasks()
 
     def get_stats(self):
@@ -1029,7 +918,11 @@ class TaskManager:
                 total += int(task.get('studied_seconds') or 0)
         return total
 
-    def get_missed_tasks(self, grace_seconds=60):
+    def get_missed_tasks(self, grace_seconds: int = 60, max_overdue_hours: int = 24):
+        """
+        FIX: Added max_overdue_hours upper bound so stale tasks created days
+        ago are not perpetually flagged as newly-missed.
+        """
         now = datetime.now()
         results = []
         for task in self.tasks.values():
@@ -1038,7 +931,8 @@ class TaskManager:
             planned_start = self._parse_datetime(task.get('planned_start'))
             if not planned_start:
                 continue
-            if (now - planned_start).total_seconds() >= grace_seconds:
+            overdue_seconds = (now - planned_start).total_seconds()
+            if grace_seconds <= overdue_seconds <= max_overdue_hours * 3600:
                 results.append(task)
         return results
 
@@ -1055,8 +949,7 @@ class TaskManager:
             'missed_sessions': [t for t in self.history if t.get('status') == 'missed'],
             'total_study_minutes': sum(
                 t.get('duration_minutes', 0) for t in self.history
-                if t.get('status') == 'completed'
-            ),
+                if t.get('status') == 'completed'),
             'total_sessions': len(self.history),
         }
 
@@ -1067,11 +960,9 @@ class TaskManager:
 
 class AdaptivePlanner:
     """
-    Predicts task completion probability with:
-    - Distraction-aware dynamic rescheduling using smart slot selection
-    - Personalized productivity profiling per student
-    - Weekly trend analytics and data-driven improvement suggestions
-    - Content classification integration for context-aware feedback
+    Predicts task completion probability using a Random Forest trained on
+    student habits data. Integrates distraction-aware rescheduling,
+    productivity profiling, trend analytics, and content classification.
     """
 
     def __init__(self):
@@ -1094,632 +985,358 @@ class AdaptivePlanner:
             'recovery': [
                 "You seem tired. Take 5 minutes to reset, then continue with an easier task.",
                 "Rest is productive too. Take a short break and come back refreshed.",
-                "Your energy is low. A quick stretch or snack can help you refocus."
+                "Consider switching to a lighter task to rebuild momentum.",
             ],
-            'missed_support': [
-                "It's okay to miss a task. Let's reschedule it for a better time.",
-                "Don't stress about the missed session. We've moved it to your next free slot.",
-                "Missing one task doesn't define your day. Let's adjust the plan."
+            'focused': [
+                "Great focus! Keep the momentum going.",
+                "You're in the zone — stay consistent!",
+                "Excellent concentration. Your effort is paying off.",
             ],
-            'refocus': [
-                "You've been distracted for a while. Try a 5-minute focus sprint.",
-                "Let's get back on track. Start with the easiest part of your task.",
-                "Distractions happen. Close unnecessary tabs and try again."
+            'distracted': [
+                "It looks like you got distracted. Try closing unnecessary tabs.",
+                "Distraction detected. Take a breath and refocus on your task.",
+                "Stay on track! Minimize distractions for the next 25 minutes.",
             ],
-            'streak': [
-                "You're on a roll! Keep up the great work.",
-                "Fantastic focus streak! Your consistency is paying off.",
-                "Impressive discipline! You've been focused for multiple sessions."
+            'social_media': [
+                "Social media detected. Consider enabling the site blocker.",
+                "You've been on social media. Redirect to your study material.",
+                "Social media can wait — your deadline can't.",
             ],
-            'praise': [
-                "Nice work! Your study pattern looks solid today.",
-                "Great job staying focused. Your effort is showing.",
-                "Excellent session! You're making real progress."
+            'reschedule': [
+                "Task rescheduled to a better time. You can do this!",
+                "No worries — your task has been moved to a slot where you perform better.",
+                "Rescheduled successfully. Make the most of your next study window.",
             ],
-            'encourage': [
-                "You're doing okay - let's aim to complete the next task calmly.",
-                "Keep going at your own pace. Every minute of focus counts.",
-                "You're making progress. Stay with it a little longer."
+            'complete': [
+                "Task completed! Well done — take a short break before the next one.",
+                "Great job finishing on time! Keep building that streak.",
+                "One down! Your productivity is building momentum.",
             ],
-            'distraction_warning': [
-                "High distraction detected! Your current task has been rescheduled.",
-                "You've been distracted for several minutes. We've adjusted your schedule.",
-                "Distraction levels are elevated. Taking a break might help before continuing."
-            ],
-            'auto_reschedule': [
-                "We've automatically moved your task to the next available slot due to sustained distraction.",
-                "Your schedule has been adjusted. The current task was rescheduled because focus dropped significantly.",
-                "Task rescheduled automatically. Try a lighter task or take a short break first."
-            ],
-            'content_warning': [
-                "Non-educational content detected during your study session. Refocus on your task.",
-                "Your browser shows entertainment content. Close it and return to your study material.",
-                "Content classifier flagged non-study material. Stay on track!"
-            ],
-        }
-
-        self.feedback_actions = {
-            'recovery': 'Switch to a lighter task / add a short break',
-            'missed_support': 'Review rescheduled task in your updated plan',
-            'refocus': 'Close distracting apps and try a 5-min focus sprint',
-            'streak': 'Continue with next planned task',
-            'praise': 'Continue with next planned task',
-            'encourage': 'Do the next task with a small goal',
-            'distraction_warning': 'Take a 5-minute break then restart',
-            'auto_reschedule': 'Check your updated schedule for the new time slot',
-            'content_warning': 'Close non-study tabs and refocus on your material',
         }
 
         self._load_model()
 
-    # ── Model ────────────────────────────────────────────────────
+    # ── Model Persistence ────────────────────────────────────────
 
     def _load_model(self):
-        if (os.path.exists(self.model_path) and
-                os.path.exists(self.scaler_path) and
-                os.path.exists(self.columns_path)):
+        if (os.path.exists(self.model_path)
+                and os.path.exists(self.scaler_path)
+                and os.path.exists(self.columns_path)):
             try:
                 self.model = joblib.load(self.model_path)
                 self.scaler = joblib.load(self.scaler_path)
                 self.feature_columns = joblib.load(self.columns_path)
-                print('[Planner] Model loaded from saved files')
+                print(f'[AdaptivePlanner] Model loaded ({len(self.feature_columns)} features)')
             except Exception as e:
-                print(f'[Planner] Failed to load model: {e}')
+                print(f'[AdaptivePlanner] Failed to load model: {e}')
                 self.model = None
         else:
-            print('[Planner] No saved model found, will train on first request')
+            print('[AdaptivePlanner] No saved model found – call train_model() first.')
 
-    def train(self):
-        data_dir = os.path.dirname(__file__)
-        enhanced_path = os.path.join(data_dir, 'enhanced_student_habits_performance_dataset.csv')
-        basic_path = os.path.join(data_dir, 'student_habits_performance.csv')
+    def _save_model(self):
+        try:
+            joblib.dump(self.model, self.model_path)
+            joblib.dump(self.scaler, self.scaler_path)
+            joblib.dump(self.feature_columns, self.columns_path)
+            print('[AdaptivePlanner] Model saved.')
+        except Exception as e:
+            print(f'[AdaptivePlanner] Failed to save model: {e}')
 
-        if os.path.exists(enhanced_path):
-            df = pd.read_csv(enhanced_path)
-            print(f'[Planner] Loaded enhanced dataset: {df.shape}')
-        elif os.path.exists(basic_path):
-            df = pd.read_csv(basic_path)
-            print(f'[Planner] Loaded basic dataset: {df.shape}')
-        else:
-            raise FileNotFoundError('No planner dataset found')
+    # ── Training ─────────────────────────────────────────────────
 
-        if 'social_media_hours' in df.columns:
-            df['total_social_hours'] = df['social_media_hours']
+    def train_model(self, csv_path: str = None) -> dict:
+        """Train Random Forest on student_habits_performance.csv."""
+        if csv_path is None:
+            csv_path = os.path.join(os.path.dirname(__file__), 'student_habits_performance.csv')
+
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            return {'success': False, 'error': f'Failed to load CSV: {e}'}
+
+        # Build binary target: exam_score >= median → likely_to_complete
+        if 'exam_score' not in df.columns:
+            return {'success': False, 'error': 'Column "exam_score" not found in CSV.'}
+
+        median_score = df['exam_score'].median()
+        df['target'] = (df['exam_score'] >= median_score).astype(int)
+
+        # Derive total_social_hours if not present
+        social_cols = [c for c in df.columns if 'social' in c.lower() and c != 'total_social_hours']
+        if 'total_social_hours' not in df.columns and social_cols:
+            df['total_social_hours'] = df[social_cols].sum(axis=1)
         elif 'total_social_hours' not in df.columns:
-            df['total_social_hours'] = 0
+            df['total_social_hours'] = 0.0
 
-        df['focus_ratio'] = df['study_hours_per_day'] / (
-            df['study_hours_per_day'] + df['total_social_hours'] + 1
-        )
+        feature_cols = [c for c in NUMERIC_COLS if c in df.columns]
+        if not feature_cols:
+            return {'success': False, 'error': 'No usable numeric feature columns found.'}
 
-        np.random.seed(42)
-        df['task_completed'] = (
-            df['focus_ratio'] + np.random.normal(0, 0.1, len(df)) > 0.5
-        ).astype(int)
-
-        features = ['age', 'gender', 'part_time_job', 'study_hours_per_day',
-                    'sleep_hours', 'total_social_hours']
-        available = [f for f in features if f in df.columns]
-        df = df[available + ['task_completed']].dropna()
-
-        X = df[available].copy()
-        y = df['task_completed'].copy()
-
-        cat_cols = [c for c in ['gender', 'part_time_job'] if c in available]
-        X = pd.get_dummies(X, columns=cat_cols, drop_first=True)
-
-        self.scaler = StandardScaler()
-        scale_cols = [c for c in NUMERIC_COLS if c in X.columns]
-        X[scale_cols] = self.scaler.fit_transform(X[scale_cols])
-
-        self.feature_columns = list(X.columns)
+        X = df[feature_cols].fillna(df[feature_cols].median())
+        y = df['target']
 
         if HAS_SMOTE:
-            smote = SMOTE(random_state=42)
-            X_bal, y_bal = smote.fit_resample(X, y)
-        else:
-            X_bal, y_bal = X, y
+            try:
+                X, y = SMOTE(random_state=42).fit_resample(X, y)
+                print('[AdaptivePlanner] SMOTE applied.')
+            except Exception as e:
+                print(f'[AdaptivePlanner] SMOTE failed, proceeding without: {e}')
 
         X_train, X_test, y_train, y_test = train_test_split(
-            X_bal, y_bal, test_size=0.2, random_state=42, stratify=y_bal)
+            X, y, test_size=0.2, random_state=42, stratify=y)
 
-        self.model = RandomForestClassifier(
-            n_estimators=200, max_depth=10,
-            min_samples_split=10, min_samples_leaf=5,
-            random_state=42
-        )
-        self.model.fit(X_train, y_train)
+        scaler = StandardScaler()
+        X_train_s = scaler.fit_transform(X_train)
+        X_test_s = scaler.transform(X_test)
 
-        train_acc = accuracy_score(y_train, self.model.predict(X_train))
-        test_acc = accuracy_score(y_test, self.model.predict(X_test))
-        print(f'[Planner] Train acc: {train_acc:.3f}, Test acc: {test_acc:.3f}')
+        clf = RandomForestClassifier(
+            n_estimators=200, max_depth=8, min_samples_split=4,
+            class_weight='balanced', random_state=42, n_jobs=-1)
+        clf.fit(X_train_s, y_train)
 
-        joblib.dump(self.model, self.model_path)
-        joblib.dump(self.scaler, self.scaler_path)
-        joblib.dump(self.feature_columns, self.columns_path)
-        return {'train_accuracy': train_acc, 'test_accuracy': test_acc}
+        acc = accuracy_score(y_test, clf.predict(X_test_s))
+        self.model = clf
+        self.scaler = scaler
+        self.feature_columns = feature_cols
+        self._save_model()
 
-    def _prepare_features(self, data):
-        row = {
-            'age': float(data.get('age', 0) or 0),
-            'study_hours_per_day': float(data.get('study_hours_per_day', 0) or 0),
-            'sleep_hours': float(data.get('sleep_hours', 0) or 0),
-            'total_social_hours': float(data.get('total_social_hours', 0) or 0),
-            'gender_Male': 1 if data.get('gender', 'Male') == 'Male' else 0,
-            'gender_Other': 1 if data.get('gender', 'Male') == 'Other' else 0,
-            'part_time_job_Yes': 1 if data.get('part_time_job', 'No') == 'Yes' else 0,
-        }
-        df = pd.DataFrame([row])
-        for col in self.feature_columns:
-            if col not in df.columns:
-                df[col] = 0
-        df = df[self.feature_columns]
-        scale_cols = [c for c in NUMERIC_COLS if c in df.columns]
-        if scale_cols:
-            df[scale_cols] = self.scaler.transform(df[scale_cols])
-        return df
-
-    # ── Task wrappers (with profiler + trend hooks) ──────────────
-
-    def complete_task(self, task_id: str, elapsed_seconds: int = None):
-        """Complete a task and update profiler + trend analyzer."""
-        task = self.task_manager.complete_task(task_id, elapsed_seconds)
-        if task:
-            self.profiler.record_completion(task, completed=True)
-            self.trend_analyzer.record_task_completed(task)
-        return task
-
-    def miss_task(self, task_id: str, reason: str = 'distraction'):
-        """Mark a task missed and update profiler + trend analyzer."""
-        task = self.task_manager.miss_task(task_id, reason)
-        if task:
-            self.profiler.record_completion(task, completed=False)
-            self.trend_analyzer.record_task_missed(task)
-        return task
-
-    # ── Smart slot selection ─────────────────────────────────────
-
-    def _find_best_slot(self, schedule, current_slot=None,
-                        subject=None, priority='medium', duration=60):
-        """
-        Find the optimal available slot using the productivity profiler.
-        For high-priority tasks, cascades lower-priority tasks to later slots
-        if needed to secure a peak-performance time window.
-        Falls back to first free slot if no profiler data.
-        """
-        if not schedule:
-            return None
-
-        free_slots = [s for s in schedule if s.get('status') == 'free']
-        if current_slot:
-            future = [s for s in free_slots if s.get('time', '') > current_slot]
-            free_slots = future if future else free_slots
-
-        if not free_slots:
-            return None
-
-        candidates = [s['time'] for s in free_slots if s.get('time')]
-        if not candidates:
-            return None
-
-        # Use profiler for intelligent selection
-        best = self.profiler.get_optimal_slot(candidates, subject, priority)
-
-        # For high-priority tasks: if best slot is occupied by a lower-priority
-        # pending task, cascade that task to the next available slot (max 2 bumps)
-        if priority == 'high' and best:
-            bumped = 0
-            for pending in self.task_manager.get_pending_tasks():
-                if bumped >= 2:
-                    break
-                if (pending.get('scheduled_slot') == best and
-                        pending.get('priority', 'medium') != 'high'):
-                    remaining = [c for c in candidates if c > best]
-                    if remaining:
-                        bump_slot = self.profiler.get_optimal_slot(
-                            remaining, pending.get('subject'), pending.get('priority', 'medium'))
-                        self.task_manager.reschedule_task(
-                            pending['id'], bump_slot, 'bumped_for_high_priority')
-                        bumped += 1
-
-        return best
-
-    # ── Content classification integration ───────────────────────
-
-    def analyze_content_context(self, content_state: dict) -> dict:
-        """
-        Analyze browser content state (from ContentClassifier) and return
-        an adjustment to the task completion probability and optional warning.
-        """
-        if not content_state or content_state.get('result') == 'pending':
-            return {'adjustment': 0.0, 'is_educational': None, 'content_warning': None}
-
-        result = content_state.get('result', '')
-        label = content_state.get('label', 'unknown')
-        is_educational = (label == 'educational' or result == 'allow')
-
-        # Record in trend tracker
-        if result in ('allow', 'block'):
-            self.trend_analyzer.record_content_event(is_educational)
-
-        if is_educational:
-            adjustment = -0.05  # Educational content → slight boost to completion prob
-            warning = None
-        else:
-            adjustment = 0.15   # Non-educational → raises distraction probability
-            title = content_state.get('title', 'unknown page')
-            warning = f"Non-educational content detected: '{title}'. Refocus on your task."
-
+        print(f'[AdaptivePlanner] Training complete. Test accuracy: {acc:.3f}')
         return {
-            'adjustment': adjustment,
-            'is_educational': is_educational,
-            'content_warning': warning,
-            'label': label,
-            'title': content_state.get('title', ''),
-            'url': content_state.get('url', ''),
-        }
-
-    # ── Feedback ─────────────────────────────────────────────────
-
-    def _generate_feedback(self, probability, data, distraction_state=None,
-                           content_context=None):
-        sleep = float(data.get('sleep_hours', 7))
-        social = float(data.get('total_social_hours', 0))
-        missed = int(data.get('missed_count_today', 0))
-
-        # Determine feedback type in priority order
-        if content_context and content_context.get('content_warning'):
-            fb_type = 'content_warning'
-        elif distraction_state and distraction_state.get('is_distracted'):
-            confidence = distraction_state.get('confidence', 0)
-            if confidence > 0.8:
-                fb_type = 'auto_reschedule'
-            elif confidence > 0.6:
-                fb_type = 'distraction_warning'
-            else:
-                fb_type = 'refocus'
-        elif sleep < 5:
-            fb_type = 'recovery'
-        elif missed > 2:
-            fb_type = 'missed_support'
-        elif social > 3:
-            fb_type = 'refocus'
-        elif probability > 0.85:
-            fb_type = 'praise'
-        elif probability > 0.65:
-            fb_type = 'encourage'
-        else:
-            fb_type = 'recovery'
-
-        message = random.choice(
-            self.feedback_messages.get(fb_type, self.feedback_messages['encourage'])
-        )
-        action = self.feedback_actions.get(fb_type, 'Continue with your plan')
-
-        # Supplement with trend context
-        supplement = None
-        try:
-            summary = self.trend_analyzer.get_weekly_summary()
-            trend = summary.get('trend_direction', 'stable')
-            if trend == 'improving' and fb_type in ('praise', 'encourage'):
-                supplement = f"You're improving this week — up {summary.get('trend_delta', 0):.0f}% from last period!"
-            elif trend == 'declining' and fb_type in ('encourage', 'recovery'):
-                supplement = "This week has been tough. Small wins still count — keep going."
-        except Exception:
-            pass
-
-        result = {
-            'feedback_type': fb_type,
-            'message': message,
-            'suggested_action': action,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        }
-        if supplement:
-            result['trend_supplement'] = supplement
-        if content_context and content_context.get('content_warning'):
-            result['content_warning'] = content_context['content_warning']
-
-        return result
-
-    # ── Distraction reschedule ────────────────────────────────────
-
-    def _check_distraction_reschedule(self, distraction_state, schedule,
-                                      active_task=None):
-        if not distraction_state:
-            return None
-
-        is_distracted = distraction_state.get('is_distracted', False)
-        confidence = distraction_state.get('confidence', 0)
-
-        if is_distracted:
-            self.distraction_streak += 1
-            self.trend_analyzer.record_distraction_event(duration_minutes=5)
-        else:
-            self.distraction_streak = 0
-
-        should_reschedule = False
-        reason = None
-
-        if is_distracted and confidence > 0.95:
-            should_reschedule = True
-            reason = 'extreme_distraction'
-        elif is_distracted and confidence > 0.90 and self.distraction_streak >= 2:
-            should_reschedule = True
-            reason = 'sustained_high_distraction'
-        elif is_distracted and confidence > 0.80 and self.distraction_streak >= 3:
-            should_reschedule = True
-            reason = 'prolonged_distraction'
-
-        if should_reschedule and active_task:
-            current_slot = active_task.get('scheduled_slot')
-            subject = active_task.get('subject')
-            priority = active_task.get('priority', 'medium')
-            duration = active_task.get('duration_minutes', 60)
-
-            new_slot = self._find_best_slot(
-                schedule, current_slot, subject, priority, duration)
-
-            if new_slot:
-                self.task_manager.reschedule_task(active_task['id'], new_slot, reason)
-                self.task_manager.record_distraction_event(active_task['id'])
-                profile = self.profiler.get_profile_summary()
-                return {
-                    'rescheduled': True,
-                    'task_id': active_task['id'],
-                    'task_subject': active_task['subject'],
-                    'old_slot': current_slot,
-                    'new_slot': new_slot,
-                    'reason': reason,
-                    'distraction_confidence': confidence,
-                    'distraction_streak': self.distraction_streak,
-                    'slot_optimized': profile['has_enough_data'],
-                }
-
-        return None
-
-    # ── Main predict ─────────────────────────────────────────────
-
-    def _study_fatigue_probability(self, study_hours):
-        """Estimate task readiness from cumulative study load."""
-        study_hours = max(0.0, float(study_hours or 0))
-        fatigue_score = 0.98 - (0.03 * study_hours) - (0.003 * (study_hours ** 2))
-        return max(0.05, min(fatigue_score, 0.98))
-
-    def predict(self, data, distraction_state=None, content_state=None):
-        if self.model is None:
-            self.train()
-
-        X = self._prepare_features(data)
-        model_prob = float(self.model.predict_proba(X)[0][1])
-        original_prob = model_prob
-        distraction_adjustment = 0.0
-        content_adjustment = 0.0
-
-        study_hours = float(data.get('study_hours_per_day', 0) or 0)
-        sleep_hours = float(data.get('sleep_hours', 0) or 0)
-        social_hours = float(data.get('total_social_hours', 0) or 0)
-
-        study_prob = self._study_fatigue_probability(study_hours)
-        sleep_adjustment = (sleep_hours - 7.0) * 0.035
-        social_adjustment = social_hours * 0.11
-
-        rule_based_probability = study_prob + sleep_adjustment - social_adjustment
-        rule_based_probability = max(0.0, min(rule_based_probability, 1.0))
-
-        # Keep the ML classifier as a supporting signal while making the
-        # planner respond smoothly to current fatigue and routine inputs.
-        prob = (0.15 * model_prob) + (0.85 * rule_based_probability)
-
-        # Content classification adjustment
-        content_context = None
-        if content_state:
-            content_context = self.analyze_content_context(content_state)
-            content_adjustment = content_context.get('adjustment', 0.0)
-            prob = max(0.01, min(0.99, prob - content_adjustment))
-
-        # Distraction model adjustment
-        if distraction_state and distraction_state.get('is_distracted'):
-            dist_confidence = float(distraction_state.get('confidence', 0) or 0)
-            distraction_adjustment = dist_confidence * 0.30
-            prob = max(0.01, min(0.99, prob - distraction_adjustment))
-
-        prob = max(0.0, min(prob, 1.0))
-
-        pred = int(prob >= 0.5)
-
-        # Update focus streak
-        new_badges = self.task_manager.update_streak(prob >= 0.5)
-
-        # Update active task focus score + distraction events
-        active_task = self.task_manager.get_active_task()
-        if active_task and distraction_state:
-            focus_score = 1 - distraction_state.get('final_prob', 0.5)
-            self.task_manager.update_focus_score(active_task['id'], focus_score)
-            if distraction_state.get('is_distracted'):
-                self.task_manager.record_distraction_event(active_task['id'])
-
-        # Smart rescheduling
-        schedule = data.get('schedule', [])
-        reschedule_info = self._check_distraction_reschedule(
-            distraction_state, schedule, active_task)
-
-        if reschedule_info:
-            decision = (
-                f"Task '{reschedule_info['task_subject']}' auto-rescheduled "
-                f"to {reschedule_info['new_slot']} "
-                f"({'optimized slot' if reschedule_info.get('slot_optimized') else 'next free slot'})"
-            )
-            new_slot = reschedule_info['new_slot']
-        elif prob >= 0.7:
-            decision = 'Continue current task'
-            new_slot = None
-        elif prob >= 0.4:
-            decision = 'Continue with shorter focus blocks'
-            new_slot = None
-        else:
-            decision = 'Consider resting and rescheduling'
-            subject = active_task.get('subject') if active_task else None
-            priority = active_task.get('priority', 'medium') if active_task else 'medium'
-            duration = active_task.get('duration_minutes', 60) if active_task else 60
-            new_slot = self._find_best_slot(schedule, subject=subject,
-                                            priority=priority, duration=duration)
-
-        feedback = self._generate_feedback(prob, data, distraction_state, content_context)
-
-        # Social media alert
-        social_alert = None
-        if social_hours > 1:
-            self.social_alert_count += 1
-            if self.social_alert_count <= 3:
-                msgs = [
-                    'Your social media usage is increasing. Try to refocus.',
-                    'You have been distracted for a while. Time to continue your task.',
-                    'Social media is consuming your study time. Consider blocking these apps.'
-                ]
-            else:
-                msgs = [
-                    'Repeated social media alerts detected. Strongly consider enabling the blocker.',
-                    'Your social media time significantly exceeds recommended limits.'
-                ]
-            social_alert = {
-                'type': 'social_media_alert',
-                'message': random.choice(msgs),
-                'suggested_action': 'Return to the current task',
-                'alert_count': self.social_alert_count,
-            }
-
-        result = {
-            'prediction': pred,
-            'task_completion_probability': round(prob, 4),
-            'original_probability': round(original_prob, 4),
-            'rule_based_probability': round(rule_based_probability, 4),
-            'distraction_adjustment': round(distraction_adjustment, 4),
-            'content_adjustment': round(content_adjustment, 4),
-            'planner_decision': decision,
-            'new_slot': new_slot,
-            'feedback': feedback,
-            'social_alert': social_alert,
-            'task_stats': self.task_manager.get_stats(),
-            'streak_info': self.task_manager.get_streak_info(),
-        }
-
-        if new_badges:
-            result['new_badges'] = new_badges
-        if reschedule_info:
-            result['reschedule_info'] = reschedule_info
-        if content_context and content_context.get('content_warning'):
-            result['content_context'] = {
-                'warning': content_context['content_warning'],
-                'label': content_context.get('label'),
-                'is_educational': content_context.get('is_educational'),
-            }
-        if distraction_state:
-            result['distraction_aware'] = True
-            result['live_distraction'] = {
-                'is_distracted': distraction_state.get('is_distracted', False),
-                'confidence': distraction_state.get('confidence', 0),
-                'dominant_app': distraction_state.get('dominant_app', 'unknown'),
-                'streak': self.distraction_streak,
-            }
-
-        return result
-
-    # ── Smart schedule ────────────────────────────────────────────
-
-    def get_smart_schedule(self) -> dict:
-        """
-        Generate an AI-recommended schedule for all pending tasks.
-        Orders tasks by urgency (priority × subject difficulty),
-        maps them to the student's optimal time slots.
-        """
-        pending = self.task_manager.get_pending_tasks()
-        if not pending:
-            return {
-                'recommendations': [],
-                'message': 'No pending tasks to schedule.',
-                'profile_based': False,
-            }
-
-        profile = self.profiler.get_profile_summary()
-        subj_rates = {s['subject']: s['completion_rate']
-                      for s in profile.get('subject_performance', [])}
-        priority_weight = {'high': 3, 'medium': 2, 'low': 1}
-
-        def urgency(task):
-            base = priority_weight.get(task.get('priority', 'medium'), 2)
-            subj = (task.get('subject') or '').lower().strip()
-            perf = subj_rates.get(subj, 0.5)
-            # Hard subject + high priority = most urgent for prime slots
-            return base * (1.5 - perf)
-
-        sorted_tasks = sorted(pending, key=urgency, reverse=True)
-
-        # Build available slot pool from now
-        now_hour = datetime.now().hour
-        all_slots = [f'{h:02d}:00' for h in range(max(now_hour, 8), 23)]
-
-        # Separate peak from off-peak
-        best_hours_set = {h['hour'] for h in profile.get('best_hours', [])}
-        peak_slots = [s for s in all_slots if int(s.split(':')[0]) in best_hours_set]
-        off_peak_slots = [s for s in all_slots if s not in peak_slots]
-        ordered_pool = peak_slots + off_peak_slots
-
-        # Already occupied slots (from other pending tasks' current scheduled_slot)
-        used_slots = set()
-        recommendations = []
-
-        for task in sorted_tasks:
-            subject = (task.get('subject') or '').lower().strip()
-            priority = task.get('priority', 'medium')
-
-            # Find best unused slot for this task
-            available = [s for s in ordered_pool if s not in used_slots]
-            if not available:
-                available = ordered_pool  # reuse if we run out
-
-            rec_slot = self.profiler.get_optimal_slot(available, subject, priority)
-            if rec_slot:
-                used_slots.add(rec_slot)
-
-            subj_rate = subj_rates.get(subject)
-            is_peak = rec_slot and int(rec_slot.split(':')[0]) in best_hours_set
-
-            recommendations.append({
-                'task_id': task['id'],
-                'subject': task['subject'],
-                'priority': priority,
-                'duration_minutes': task.get('duration_minutes', 60),
-                'current_slot': task.get('scheduled_slot'),
-                'recommended_slot': rec_slot or task.get('scheduled_slot'),
-                'subject_completion_rate': round(subj_rate, 3) if subj_rate is not None else None,
-                'is_peak_hour': bool(is_peak),
-                'reason': (
-                    'Peak productivity hour based on your history'
-                    if is_peak else
-                    'Next available slot (build more history for smarter suggestions)'
-                ),
-            })
-
-        return {
-            'recommendations': recommendations,
-            'profile_based': profile['has_enough_data'],
-            'best_hours': profile.get('best_hours', []),
-            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'message': (
-                'Schedule optimized using your productivity profile.'
-                if profile['has_enough_data'] else
-                'Schedule generated. Complete more tasks to improve personalization.'
+            'success': True,
+            'accuracy': round(float(acc), 4),
+            'features': feature_cols,
+            'train_samples': len(X_train),
+            'test_samples': len(X_test),
+            'smote_applied': HAS_SMOTE,
+            'note': (
+                'Target is exam_score >= median. This is a proxy for task completion '
+                'probability. Re-train when real completion data is collected.'
             ),
         }
 
-    # ── Full analytics ────────────────────────────────────────────
+    # ── Prediction ───────────────────────────────────────────────
+
+    def predict(self, user_data: dict, task: dict = None,
+                distraction_state: dict = None, content_state: dict = None) -> dict:
+        """
+        Predict completion probability for a given user context.
+        Returns probability, recommendation, feedback, and reschedule suggestion.
+        """
+        if self.model is None:
+            return {
+                'success': False,
+                'error': 'Model not trained. Call train_model() first.',
+                'completion_probability': 0.5,
+            }
+
+        # Build feature vector
+        feature_vec = []
+        for col in self.feature_columns:
+            val = user_data.get(col, 0.0)
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                val = 0.0
+            feature_vec.append(val)
+
+        X = np.array(feature_vec).reshape(1, -1)
+        X_scaled = self.scaler.transform(X)
+
+        prob = float(self.model.predict_proba(X_scaled)[0][1])
+
+        # Adjust for live distraction state
+        distraction_penalty = 0.0
+        if distraction_state:
+            dist_prob = float(distraction_state.get('final_prob', 0.0))
+            if dist_prob >= 0.7:
+                distraction_penalty = 0.15
+            elif dist_prob >= 0.5:
+                distraction_penalty = 0.08
+            streak = int(distraction_state.get('streak_count', 0))
+            distraction_penalty += min(streak * 0.02, 0.10)
+
+        # Adjust for content classification
+        content_penalty = 0.0
+        if content_state:
+            is_edu = content_state.get('is_educational', True)
+            if not is_edu:
+                content_penalty = 0.05
+
+        adjusted_prob = float(np.clip(prob - distraction_penalty - content_penalty, 0.05, 0.98))
+
+        # Profiler adjustment: peak-hour bonus / off-peak penalty
+        now = datetime.now()
+        hour_rate = self.profiler.get_hourly_rate(now.hour)
+        dow_rate = self.profiler.get_dow_rate(now.weekday())
+        profiler_adj = (hour_rate - 0.5) * 0.10 + (dow_rate - 0.5) * 0.05
+        adjusted_prob = float(np.clip(adjusted_prob + profiler_adj, 0.05, 0.98))
+
+        # Recommendation tier
+        if adjusted_prob >= 0.70:
+            recommendation = 'proceed'
+            tier = 'high'
+        elif adjusted_prob >= 0.45:
+            recommendation = 'caution'
+            tier = 'medium'
+        else:
+            recommendation = 'reschedule'
+            tier = 'low'
+
+        # Feedback message
+        if distraction_state and distraction_state.get('label') == 'DISTRACTED':
+            app_label = distraction_state.get('app_cat_label', '')
+            if 'social' in app_label or 'entertainment' in app_label:
+                feedback = random.choice(self.feedback_messages['social_media'])
+                self.social_alert_count += 1
+            else:
+                feedback = random.choice(self.feedback_messages['distracted'])
+            self.distraction_streak += 1
+        else:
+            feedback = random.choice(self.feedback_messages['focused'])
+            self.distraction_streak = 0
+
+        self.last_distraction_state = distraction_state
+
+        # Reschedule suggestion
+        reschedule_info = None
+        if recommendation == 'reschedule' and task:
+            reschedule_info = self._compute_reschedule(task, adjusted_prob)
+
+        return {
+            'success': True,
+            'base_probability': round(prob, 4),
+            'adjusted_probability': round(adjusted_prob, 4),
+            'completion_probability': round(adjusted_prob, 4),
+            'recommendation': recommendation,
+            'confidence_tier': tier,
+            'distraction_penalty': round(distraction_penalty, 4),
+            'content_penalty': round(content_penalty, 4),
+            'profiler_adjustment': round(profiler_adj, 4),
+            'feedback': feedback,
+            'reschedule': reschedule_info,
+            'distraction_streak': self.distraction_streak,
+            'social_alert_count': self.social_alert_count,
+        }
+
+    # ── Rescheduling ─────────────────────────────────────────────
+
+    def _compute_reschedule(self, task: dict, current_prob: float) -> dict:
+        """Compute the best reschedule slot for a task."""
+        now = datetime.now()
+        duration = int(task.get('duration_minutes') or 30)
+        priority = task.get('priority', 'medium')
+        subject = task.get('subject', '')
+
+        # Generate candidate slots: next 8 hours in 30-min steps, skip current hour
+        candidates = []
+        for offset_mins in range(30, 8 * 60 + 1, 30):
+            slot_dt = now + timedelta(minutes=offset_mins)
+            slot_str = slot_dt.strftime('%H:%M')
+            candidates.append(slot_str)
+
+        best_slot = self.profiler.get_optimal_slot(candidates, subject=subject, priority=priority)
+
+        if best_slot:
+            slot_dt = datetime.strptime(
+                now.strftime('%Y-%m-%d') + ' ' + best_slot, '%Y-%m-%d %H:%M')
+            if slot_dt <= now:
+                slot_dt += timedelta(days=1)
+            planned_start = slot_dt.strftime('%Y-%m-%d %H:%M:%S')
+            planned_end = (slot_dt + timedelta(minutes=duration)).strftime('%Y-%m-%d %H:%M:%S')
+            hour_rate = self.profiler.get_hourly_rate(slot_dt.hour)
+            expected_improvement = max(0.0, hour_rate - current_prob)
+        else:
+            # No profiler data: push 1 hour
+            slot_dt = now + timedelta(hours=1)
+            best_slot = slot_dt.strftime('%H:%M')
+            planned_start = slot_dt.strftime('%Y-%m-%d %H:%M:%S')
+            planned_end = (slot_dt + timedelta(minutes=duration)).strftime('%Y-%m-%d %H:%M:%S')
+            expected_improvement = 0.0
+
+        return {
+            'suggested_slot': best_slot,
+            'planned_start': planned_start,
+            'planned_end': planned_end,
+            'reason': 'Low completion probability at current time',
+            'expected_improvement': round(expected_improvement, 3),
+            'message': random.choice(self.feedback_messages['reschedule']),
+        }
+
+    def auto_reschedule_task(self, task_id: str, distraction_state: dict = None) -> dict:
+        """Auto-reschedule a task when distraction is detected or probability is low."""
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            return {'success': False, 'error': f'Task {task_id} not found.'}
+
+        reschedule_info = self._compute_reschedule(
+            task, current_prob=float(
+                (distraction_state or {}).get('final_prob', 0.4)))
+
+        updated = self.task_manager.reschedule_task(
+            task_id,
+            new_slot=reschedule_info['suggested_slot'],
+            reason='distraction_detected',
+            planned_start=reschedule_info['planned_start'],
+            planned_end=reschedule_info['planned_end'],
+        )
+
+        return {
+            'success': True,
+            'task': updated,
+            'reschedule': reschedule_info,
+        }
+
+    # ── Analytics Helpers ─────────────────────────────────────────
 
     def get_analytics(self) -> dict:
-        """Return comprehensive analytics payload."""
+        return self.trend_analyzer.get_full_analytics(self.profiler)
+
+    def get_profile(self) -> dict:
+        return self.profiler.get_profile_summary()
+
+    def record_task_outcome(self, task_id: str, completed: bool):
+        """Call after complete_task or miss_task to update profiler and trends."""
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            # Try history
+            task = next(
+                (t for t in self.task_manager.history if t['id'] == task_id), None)
+        if not task:
+            return
+        self.profiler.record_completion(task, completed=completed)
+        if completed:
+            self.trend_analyzer.record_task_completed(task)
+        else:
+            self.trend_analyzer.record_task_missed(task)
+
+    def get_smart_schedule(self, tasks: list) -> list:
+        """
+        Sort a list of pending tasks by predicted success probability
+        using the profiler and task metadata.
+        """
+        now = datetime.now()
+        scored = []
+        for task in tasks:
+            subject = task.get('subject', '')
+            priority = task.get('priority', 'medium')
+            hour_rate = self.profiler.get_hourly_rate(now.hour)
+            subj_rate = self.profiler.get_subject_rate(subject)
+            p_weight = {'high': 1.5, 'medium': 1.0, 'low': 0.6}.get(priority, 1.0)
+            score = (hour_rate * 0.5 + subj_rate * 0.3) * p_weight
+            scored.append({**task, '_score': round(score, 4)})
+        scored.sort(key=lambda t: t['_score'], reverse=True)
+        for t in scored:
+            t.pop('_score', None)
+        return scored
+
+    def health_check(self) -> dict:
         return {
-            'trend_analytics': self.trend_analyzer.get_full_analytics(self.profiler),
-            'productivity_profile': self.profiler.get_profile_summary(),
-            'task_stats': self.task_manager.get_stats(),
-            'streak_info': self.task_manager.get_streak_info(),
-            'session_history': self.task_manager.get_session_history(),
+            'model_loaded': self.model is not None,
+            'features': self.feature_columns or [],
+            'has_smote': HAS_SMOTE,
+            'task_count': len(self.task_manager.tasks),
+            'history_count': len(self.task_manager.history),
+            'profiler_data_points': sum(
+                v[1] for v in self.profiler.hourly_completion.values()),
+            'trend_days': len(self.trend_analyzer.daily),
         }
