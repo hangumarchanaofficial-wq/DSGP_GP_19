@@ -1,0 +1,118 @@
+{
+  "source_checkpoint": "E:\\SDPPS\\distraction_prediction\\models\\saved_models\\best_model.pt",
+  "best_epoch": 4,
+  "best_val_loss": 0.258192,
+  "training_seconds": 50.69,
+  "optimizer": {
+    "name": "AdamW",
+    "lr": 0.0001,
+    "weight_decay": 0.0005
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.168367,
+      "train_acc": 0.917054,
+      "val_loss": 0.260799,
+      "val_acc": 0.881171,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.165972,
+      "train_acc": 0.9183,
+      "val_loss": 0.259234,
+      "val_acc": 0.881794,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.164456,
+      "train_acc": 0.918651,
+      "val_loss": 0.261765,
+      "val_acc": 0.880081,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.164168,
+      "train_acc": 0.919838,
+      "val_loss": 0.258192,
+      "val_acc": 0.879302,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.162984,
+      "train_acc": 0.920111,
+      "val_loss": 0.261473,
+      "val_acc": 0.882573,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.161312,
+      "train_acc": 0.921843,
+      "val_loss": 0.269885,
+      "val_acc": 0.882106,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.161446,
+      "train_acc": 0.921551,
+      "val_loss": 0.261308,
+      "val_acc": 0.88304,
+      "lr": 0.0001
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.160429,
+      "train_acc": 0.923108,
+      "val_loss": 0.262313,
+      "val_acc": 0.882261,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.157577,
+      "train_acc": 0.924315,
+      "val_loss": 0.263923,
+      "val_acc": 0.882106,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.156849,
+      "train_acc": 0.924607,
+      "val_loss": 0.261875,
+      "val_acc": 0.882417,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.156531,
+      "train_acc": 0.92486,
+      "val_loss": 0.260985,
+      "val_acc": 0.883819,
+      "lr": 5e-05
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.156665,
+      "train_acc": 0.925152,
+      "val_loss": 0.262927,
+      "val_acc": 0.88304,
+      "lr": 2.5e-05
+    }
+  ],
+  "config": {
+    "input_size": 24,
+    "hidden_size": 64,
+    "num_layers": 1,
+    "dropout": 0.5,
+    "bidirectional": true,
+    "attention_activation": "tanh",
+    "head_name": "out"
+  }
+}
