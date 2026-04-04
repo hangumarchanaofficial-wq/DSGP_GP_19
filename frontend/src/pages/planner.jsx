@@ -16,6 +16,7 @@ import {
   getSleepDateKey,
   getSleepStorageKey,
   getSliderFillPercentage,
+  getPlannerApiUrl,
   getSocialStorageKey,
   getTaskStartTime,
   parseDateValue,
@@ -141,7 +142,7 @@ export default function Planner() {
         stopSocialTimer();
       }
 
-      const res = await fetch(`http://127.0.0.1:5000/api/planner/tasks/${task.id}/start`, {
+      const res = await fetch(getPlannerApiUrl(`/api/planner/tasks/${task.id}/start`), {
         method: "POST"
       });
   
@@ -172,7 +173,7 @@ export default function Planner() {
       if (!activeTaskId) return;
       const elapsedSeconds = getCurrentSessionElapsedSeconds();
   
-      await fetch(`http://127.0.0.1:5000/api/planner/tasks/${activeTaskId}/pause`, {
+      await fetch(getPlannerApiUrl(`/api/planner/tasks/${activeTaskId}/pause`), {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -197,7 +198,7 @@ export default function Planner() {
   // Resumes a previously started task from its saved remaining time.
   const handleResumeTimer = async (task) => {
     try {
-      const res = await fetch(`http://127.0.0.1:5000/api/planner/tasks/${task.id}/resume`, {
+      const res = await fetch(getPlannerApiUrl(`/api/planner/tasks/${task.id}/resume`), {
         method: "POST"
       });
   
@@ -287,7 +288,7 @@ export default function Planner() {
           finalElapsedSeconds = getCurrentSessionElapsedSeconds();
         }
     
-        const res = await fetch(`http://127.0.0.1:5000/api/planner/tasks/${taskId}/complete`, {
+        const res = await fetch(getPlannerApiUrl(`/api/planner/tasks/${taskId}/complete`), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -326,12 +327,12 @@ export default function Planner() {
   const [profileOpen, setProfileOpen] = useState(true);
 
   const [form, setForm] = useState({
-    age: 20,
+    age: 0,
     gender: "Male",
     part_time_job: "No",
-    study_hours_per_day: 3,
-    sleep_hours: 7,
-    total_social_hours: 1.5,
+    study_hours_per_day: 0,
+    sleep_hours: 0,
+    total_social_hours: 0,
   });
   const [sleepDateKey, setSleepDateKey] = useState(() => getSleepDateKey());
   const [dailySleepMinutes, setDailySleepMinutes] = useState(0);
@@ -396,6 +397,12 @@ export default function Planner() {
 
   // Updates a single field inside the student profile form state.
   const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
+  const parseNonNegativeNumber = (value) => {
+    if (value === "") return 0;
+    const parsed = Number(value);
+    if (Number.isNaN(parsed) || parsed < 0) return 0;
+    return parsed;
+  };
   const showPlannerNotice = useCallback((title, message, tone = "warning") => {
     setPlannerNotice({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -521,7 +528,7 @@ export default function Planner() {
   // Pulls the latest planner task list and summary stats from the backend.
   const fetchTasks = useCallback(async () => {
     try {
-      const res = await fetch("/api/planner/tasks");
+      const res = await fetch(getPlannerApiUrl("/api/planner/tasks"));
       if (res.ok) {
         const d = await res.json();
         setTasks(d.tasks || []);
@@ -536,7 +543,7 @@ export default function Planner() {
   const fetchDistraction = useCallback(async () => {
     try {
       if (Date.now() < notificationsMutedUntil) return;
-      const res = await fetch("/api/planner/distraction-check");
+      const res = await fetch(getPlannerApiUrl("/api/planner/distraction-check"));
       if (res.ok) {
         const d = await res.json();
         setDistractionState(d.distraction_state);
@@ -798,7 +805,7 @@ export default function Planner() {
         return;
       }
   
-      const res = await fetch("/api/planner/tasks", {
+      const res = await fetch(getPlannerApiUrl("/api/planner/tasks"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -967,7 +974,7 @@ export default function Planner() {
   // Deletes a selected task and refreshes the planner state.
   const deleteTask = async (id) => {
     try {
-      const res = await fetch(`/api/planner/tasks/${id}`, {
+      const res = await fetch(getPlannerApiUrl(`/api/planner/tasks/${id}`), {
         method: "DELETE",
       });
   
@@ -1002,7 +1009,7 @@ export default function Planner() {
         time: t.scheduled_slot || "",
         status: t.status === "completed" ? "occupied" : "free",
       }));
-      const res = await fetch("/api/planner/predict", {
+      const res = await fetch(getPlannerApiUrl("/api/planner/predict"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...activeForm, schedule }),
@@ -1598,11 +1605,11 @@ export default function Planner() {
                     <div className="relative group">
                       <input
                         type="number"
-                        min={14}
+                        min={0}
                         max={35}
                         value={form.age}
                         onChange={(e) =>
-                          update("age", parseInt(e.target.value, 10) || 18)
+                          update("age", Math.min(35, parseNonNegativeNumber(e.target.value)))
                         }
                         className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
                         style={{

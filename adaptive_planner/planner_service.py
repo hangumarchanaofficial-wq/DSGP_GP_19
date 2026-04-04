@@ -822,6 +822,8 @@ class TaskManager:
         if not value:
             return None
         if isinstance(value, datetime):
+            if value.tzinfo is not None:
+                return value.astimezone().replace(tzinfo=None)
             return value
         text = str(value).strip()
         if not text:
@@ -830,8 +832,6 @@ class TaskManager:
             '%Y-%m-%d %H:%M:%S',
             '%Y-%m-%dT%H:%M:%S',
             '%Y-%m-%dT%H:%M:%S.%f',
-            '%Y-%m-%dT%H:%M:%SZ',
-            '%Y-%m-%dT%H:%M:%S.%fZ',
         ]
         for fmt in candidates:
             try:
@@ -839,7 +839,10 @@ class TaskManager:
             except Exception:
                 continue
         try:
-            return datetime.fromisoformat(text.replace('Z', '+00:00'))
+            parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+            if parsed.tzinfo is not None:
+                return parsed.astimezone().replace(tzinfo=None)
+            return parsed
         except Exception:
             return None
 
@@ -1238,10 +1241,10 @@ class AdaptivePlanner:
 
     def _prepare_features(self, data):
         row = {
-            'age': float(data.get('age', 20)),
-            'study_hours_per_day': float(data.get('study_hours_per_day', 3)),
-            'sleep_hours': float(data.get('sleep_hours', 7)),
-            'total_social_hours': float(data.get('total_social_hours', 1.5)),
+            'age': float(data.get('age', 0) or 0),
+            'study_hours_per_day': float(data.get('study_hours_per_day', 0) or 0),
+            'sleep_hours': float(data.get('sleep_hours', 0) or 0),
+            'total_social_hours': float(data.get('total_social_hours', 0) or 0),
             'gender_Male': 1 if data.get('gender', 'Male') == 'Male' else 0,
             'gender_Other': 1 if data.get('gender', 'Male') == 'Other' else 0,
             'part_time_job_Yes': 1 if data.get('part_time_job', 'No') == 'Yes' else 0,

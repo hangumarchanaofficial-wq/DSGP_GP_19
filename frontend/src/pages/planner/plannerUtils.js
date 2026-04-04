@@ -1,4 +1,22 @@
 // Shared planner helpers live here so the main page stays focused on app flow.
+export function getPlannerApiUrl(path) {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (typeof window === "undefined") {
+    return `http://127.0.0.1:5000${normalizedPath}`;
+  }
+
+  const envBase = import.meta.env.VITE_PLANNER_API_BASE?.trim();
+  if (envBase) return `${envBase.replace(/\/+$/, "")}${normalizedPath}`;
+
+  const origin = window.location.origin || "";
+  if (origin.startsWith("http://127.0.0.1:3000") || origin.startsWith("http://localhost:3000")) {
+    return `http://127.0.0.1:5000${normalizedPath}`;
+  }
+
+  return `${origin}${normalizedPath}`;
+}
+
 export function getTaskStartTime(task) {
   if (task?.planned_start) {
     const plannedStart = new Date(task.planned_start).getTime();
