@@ -28,6 +28,9 @@ import {
   clampSleepMinutes,
 } from "./planner/plannerUtils";
 
+import { PlannerInsights } from "./PlannerInsights";
+
+
 // Main planner page that combines task management, timers, and prediction results.
 export default function Planner() {
   const [activeTaskId, setActiveTaskId] = useState(null);
@@ -2848,9 +2851,12 @@ export default function Planner() {
             </div>
           </div>
         </div>
-        <Footer />
-        
+        {/* ── Planner Insights: Analytics, Profile & Smart Schedule ── */}
+        <section className="px-6 lg:px-8 py-4 pb-8 space-y-3">
+          <PlannerInsights />
+        </section>
 
+        <Footer />
       </main>
 
      
