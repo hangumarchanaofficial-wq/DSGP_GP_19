@@ -6,7 +6,9 @@ Fixes applied:
   3. _get_range uses a read-only helper; no longer creates phantom JSON entries on reads
   4. badge _check_badges caches completed_count once per call
   5. imbalanced-learn optional warning on startup
-  6. requirements note: add imbalanced-learn>=0.11.0 to requirements.txt
+  6. AdaptivePlanner.complete_task / miss_task wrappers added (api_server calls these)
+  7. get_smart_schedule defaults tasks=None (api_server calls with no args)
+  8. analyze_content_context and _check_distraction_reschedule added (api_server calls these)
 """
 
 import os
@@ -293,8 +295,6 @@ class TrendAnalyzer:
         """Return a copy of a day entry without creating a new entry in self.daily."""
         return dict(self.daily.get(date_str) or self._empty_day())
 
-    # ── Recording ───────────────────────────────────────────────
-
     def record_task_completed(self, task: dict):
         entry = self._get_day(self._today())
         entry['tasks_completed'] += 1
@@ -321,8 +321,6 @@ class TrendAnalyzer:
         else:
             entry['content_non_educational'] += 1
         self._save()
-
-    # ── Analysis ────────────────────────────────────────────────
 
     def _get_range(self, days: int = 7) -> list:
         """Return enriched day entries for the last N days (read-only; no side effects)."""
@@ -663,7 +661,6 @@ class TaskManager:
         return new_badges
 
     def _check_badges(self):
-        # FIX: cache completed_count once instead of scanning history twice
         completed_count = sum(1 for t in self.history if t.get('status') == 'completed')
         new_badges = []
         badge_rules = [
@@ -688,7 +685,6 @@ class TaskManager:
             {'id': 'total_50', 'name': 'Academic Hero',
              'description': '50 total focused sessions',
              'icon': 'shield', 'condition': self.total_focused_sessions >= 50},
-            # FIX: use cached completed_count
             {'id': 'tasks_5', 'name': 'Task Crusher',
              'description': 'Completed 5 tasks', 'icon': 'check-circle',
              'condition': completed_count >= 5},
@@ -761,7 +757,7 @@ class TaskManager:
             'rescheduled_from': None, 'rescheduled_to': None, 'reschedule_reason': None,
             'distraction_events': 0,
             'focus_score_avg': None,
-            'focus_score_count': 0,          # FIX: track sample count for true running mean
+            'focus_score_count': 0,
             'remaining_seconds': max(duration_minutes, 0) * 60,
             'studied_seconds': 0, 'notes': notes,
         }
@@ -879,7 +875,7 @@ class TaskManager:
             self._save_tasks()
 
     def update_focus_score(self, task_id, focus_score):
-        """FIX: True running mean using stored count, not biased (old+new)/2."""
+        """True running mean using stored count."""
         task = self.tasks.get(task_id)
         if task:
             cur = task.get('focus_score_avg')
@@ -919,10 +915,7 @@ class TaskManager:
         return total
 
     def get_missed_tasks(self, grace_seconds: int = 60, max_overdue_hours: int = 24):
-        """
-        FIX: Added max_overdue_hours upper bound so stale tasks created days
-        ago are not perpetually flagged as newly-missed.
-        """
+        """Returns tasks overdue between grace_seconds and max_overdue_hours."""
         now = datetime.now()
         results = []
         for task in self.tasks.values():
@@ -1054,14 +1047,12 @@ class AdaptivePlanner:
         except Exception as e:
             return {'success': False, 'error': f'Failed to load CSV: {e}'}
 
-        # Build binary target: exam_score >= median → likely_to_complete
         if 'exam_score' not in df.columns:
             return {'success': False, 'error': 'Column "exam_score" not found in CSV.'}
 
         median_score = df['exam_score'].median()
         df['target'] = (df['exam_score'] >= median_score).astype(int)
 
-        # Derive total_social_hours if not present
         social_cols = [c for c in df.columns if 'social' in c.lower() and c != 'total_social_hours']
         if 'total_social_hours' not in df.columns and social_cols:
             df['total_social_hours'] = df[social_cols].sum(axis=1)
@@ -1109,7 +1100,7 @@ class AdaptivePlanner:
             'test_samples': len(X_test),
             'smote_applied': HAS_SMOTE,
             'note': (
-                'Target is exam_score >= median. This is a proxy for task completion '
+                'Target is exam_score >= median. This is a proxy for task-completion '
                 'probability. Re-train when real completion data is collected.'
             ),
         }
@@ -1118,10 +1109,7 @@ class AdaptivePlanner:
 
     def predict(self, user_data: dict, task: dict = None,
                 distraction_state: dict = None, content_state: dict = None) -> dict:
-        """
-        Predict completion probability for a given user context.
-        Returns probability, recommendation, feedback, and reschedule suggestion.
-        """
+        """Predict completion probability for a given user context."""
         if self.model is None:
             return {
                 'success': False,
@@ -1129,7 +1117,6 @@ class AdaptivePlanner:
                 'completion_probability': 0.5,
             }
 
-        # Build feature vector
         feature_vec = []
         for col in self.feature_columns:
             val = user_data.get(col, 0.0)
@@ -1141,10 +1128,8 @@ class AdaptivePlanner:
 
         X = np.array(feature_vec).reshape(1, -1)
         X_scaled = self.scaler.transform(X)
-
         prob = float(self.model.predict_proba(X_scaled)[0][1])
 
-        # Adjust for live distraction state
         distraction_penalty = 0.0
         if distraction_state:
             dist_prob = float(distraction_state.get('final_prob', 0.0))
@@ -1152,26 +1137,22 @@ class AdaptivePlanner:
                 distraction_penalty = 0.15
             elif dist_prob >= 0.5:
                 distraction_penalty = 0.08
-            streak = int(distraction_state.get('streak_count', 0))
+            streak = int(distraction_state.get('distraction_streak', 0))
             distraction_penalty += min(streak * 0.02, 0.10)
 
-        # Adjust for content classification
         content_penalty = 0.0
         if content_state:
-            is_edu = content_state.get('is_educational', True)
-            if not is_edu:
+            if not content_state.get('is_educational', True):
                 content_penalty = 0.05
 
         adjusted_prob = float(np.clip(prob - distraction_penalty - content_penalty, 0.05, 0.98))
 
-        # Profiler adjustment: peak-hour bonus / off-peak penalty
         now = datetime.now()
         hour_rate = self.profiler.get_hourly_rate(now.hour)
         dow_rate = self.profiler.get_dow_rate(now.weekday())
         profiler_adj = (hour_rate - 0.5) * 0.10 + (dow_rate - 0.5) * 0.05
         adjusted_prob = float(np.clip(adjusted_prob + profiler_adj, 0.05, 0.98))
 
-        # Recommendation tier
         if adjusted_prob >= 0.70:
             recommendation = 'proceed'
             tier = 'high'
@@ -1182,7 +1163,6 @@ class AdaptivePlanner:
             recommendation = 'reschedule'
             tier = 'low'
 
-        # Feedback message
         if distraction_state and distraction_state.get('label') == 'DISTRACTED':
             app_label = distraction_state.get('app_cat_label', '')
             if 'social' in app_label or 'entertainment' in app_label:
@@ -1197,7 +1177,6 @@ class AdaptivePlanner:
 
         self.last_distraction_state = distraction_state
 
-        # Reschedule suggestion
         reschedule_info = None
         if recommendation == 'reschedule' and task:
             reschedule_info = self._compute_reschedule(task, adjusted_prob)
@@ -1227,12 +1206,10 @@ class AdaptivePlanner:
         priority = task.get('priority', 'medium')
         subject = task.get('subject', '')
 
-        # Generate candidate slots: next 8 hours in 30-min steps, skip current hour
         candidates = []
         for offset_mins in range(30, 8 * 60 + 1, 30):
             slot_dt = now + timedelta(minutes=offset_mins)
-            slot_str = slot_dt.strftime('%H:%M')
-            candidates.append(slot_str)
+            candidates.append(slot_dt.strftime('%H:%M'))
 
         best_slot = self.profiler.get_optimal_slot(candidates, subject=subject, priority=priority)
 
@@ -1246,7 +1223,6 @@ class AdaptivePlanner:
             hour_rate = self.profiler.get_hourly_rate(slot_dt.hour)
             expected_improvement = max(0.0, hour_rate - current_prob)
         else:
-            # No profiler data: push 1 hour
             slot_dt = now + timedelta(hours=1)
             best_slot = slot_dt.strftime('%H:%M')
             planned_start = slot_dt.strftime('%Y-%m-%d %H:%M:%S')
@@ -1269,8 +1245,7 @@ class AdaptivePlanner:
             return {'success': False, 'error': f'Task {task_id} not found.'}
 
         reschedule_info = self._compute_reschedule(
-            task, current_prob=float(
-                (distraction_state or {}).get('final_prob', 0.4)))
+            task, current_prob=float((distraction_state or {}).get('final_prob', 0.4)))
 
         updated = self.task_manager.reschedule_task(
             task_id,
@@ -1280,11 +1255,102 @@ class AdaptivePlanner:
             planned_end=reschedule_info['planned_end'],
         )
 
+        return {'success': True, 'task': updated, 'reschedule': reschedule_info}
+
+    # ── Task Wrappers (called by api_server.py) ───────────────────
+
+    def complete_task(self, task_id: str, elapsed_seconds: int = None) -> dict:
+        """
+        Complete a task and update profiler + trend analyzer.
+        api_server calls planner.complete_task() — this is that method.
+        """
+        task = self.task_manager.complete_task(task_id, elapsed_seconds=elapsed_seconds)
+        if task:
+            self.profiler.record_completion(task, completed=True)
+            self.trend_analyzer.record_task_completed(task)
+            self.task_manager.update_streak(is_focused=True)
+        return task
+
+    def miss_task(self, task_id: str, reason: str = 'distraction') -> dict:
+        """
+        Mark task missed and update profiler + trend analyzer.
+        api_server calls planner.miss_task() — this is that method.
+        """
+        task = self.task_manager.miss_task(task_id, reason=reason)
+        if task:
+            self.profiler.record_completion(task, completed=False)
+            self.trend_analyzer.record_task_missed(task)
+            self.task_manager.update_streak(is_focused=False)
+        return task
+
+    def record_task_outcome(self, task_id: str, completed: bool):
+        """Call after complete_task or miss_task to update profiler and trends."""
+        task = self.task_manager.get_task(task_id)
+        if not task:
+            task = next((t for t in self.task_manager.history if t['id'] == task_id), None)
+        if not task:
+            return
+        self.profiler.record_completion(task, completed=completed)
+        if completed:
+            self.trend_analyzer.record_task_completed(task)
+        else:
+            self.trend_analyzer.record_task_missed(task)
+
+    # ── Content & Distraction Helpers (called by api_server.py) ──
+
+    def analyze_content_context(self, content_result: dict) -> dict:
+        """
+        Analyze a content classification result and return a planner context summary.
+        api_server calls planner.analyze_content_context() — this is that method.
+        """
+        if not content_result:
+            return {'context': 'unknown', 'suggestion': None}
+
+        is_edu = content_result.get('is_educational', True)
+        label = content_result.get('label', 'unknown')
+        confidence = float(content_result.get('confidence', 0.0))
+
+        if is_edu:
+            context = 'educational'
+            suggestion = None
+        else:
+            context = 'non_educational'
+            if confidence >= 0.7:
+                suggestion = (
+                    "You are browsing non-educational content during a study session. "
+                    "Consider switching to your study material."
+                )
+            else:
+                suggestion = "Some non-educational content detected. Stay focused on your task."
+
+        self.trend_analyzer.record_content_event(is_educational=is_edu)
+
         return {
-            'success': True,
-            'task': updated,
-            'reschedule': reschedule_info,
+            'context': context,
+            'is_educational': is_edu,
+            'label': label,
+            'confidence': round(confidence, 4),
+            'suggestion': suggestion,
         }
+
+    def _check_distraction_reschedule(self, distraction_state: dict,
+                                       schedule_data: list,
+                                       active_task: dict) -> dict:
+        """
+        Return a reschedule dict if the active task should be moved due to distraction,
+        else return None.
+        api_server calls planner._check_distraction_reschedule() — this is that method.
+        """
+        if not distraction_state or not active_task:
+            return None
+
+        final_prob = float(distraction_state.get('final_prob', 0.0))
+        streak = int(distraction_state.get('distraction_streak', 0))
+
+        if final_prob >= 0.75 and streak >= 3:
+            return self._compute_reschedule(active_task, current_prob=final_prob)
+
+        return None
 
     # ── Analytics Helpers ─────────────────────────────────────────
 
@@ -1294,26 +1360,15 @@ class AdaptivePlanner:
     def get_profile(self) -> dict:
         return self.profiler.get_profile_summary()
 
-    def record_task_outcome(self, task_id: str, completed: bool):
-        """Call after complete_task or miss_task to update profiler and trends."""
-        task = self.task_manager.get_task(task_id)
-        if not task:
-            # Try history
-            task = next(
-                (t for t in self.task_manager.history if t['id'] == task_id), None)
-        if not task:
-            return
-        self.profiler.record_completion(task, completed=completed)
-        if completed:
-            self.trend_analyzer.record_task_completed(task)
-        else:
-            self.trend_analyzer.record_task_missed(task)
+    def get_smart_schedule(self, tasks: list = None) -> list:
+        """
+        Sort tasks by predicted success probability using the profiler.
+        Defaults to all pending tasks when called with no argument
+        (api_server calls planner.get_smart_schedule() with no args).
+        """
+        if tasks is None:
+            tasks = self.task_manager.get_pending_tasks()
 
-    def get_smart_schedule(self, tasks: list) -> list:
-        """
-        Sort a list of pending tasks by predicted success probability
-        using the profiler and task metadata.
-        """
         now = datetime.now()
         scored = []
         for task in tasks:
@@ -1324,6 +1379,7 @@ class AdaptivePlanner:
             p_weight = {'high': 1.5, 'medium': 1.0, 'low': 0.6}.get(priority, 1.0)
             score = (hour_rate * 0.5 + subj_rate * 0.3) * p_weight
             scored.append({**task, '_score': round(score, 4)})
+
         scored.sort(key=lambda t: t['_score'], reverse=True)
         for t in scored:
             t.pop('_score', None)
