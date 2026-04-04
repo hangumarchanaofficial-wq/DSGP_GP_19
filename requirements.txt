@@ -25,5 +25,8 @@ pywin32>=306           # Windows API (win32gui, win32process) — Windows only
 # ── Data Visualization (content classification training) ──────
 matplotlib>=3.7.0
 
+# ── Adaptive Planner (class balancing for Random Forest) ──────
+imbalanced-learn>=0.11.0
+
 # ── Optional: LLM-based app scoring (only if using OpenAI) ───
 # openai>=1.0.0        # Uncomment if you use score_apps_llm.py
