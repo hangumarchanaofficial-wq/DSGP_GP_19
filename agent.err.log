@@ -1,0 +1,11 @@
+[WARNING] Failed to read unmanaged installs: [WinError 5] Access is denied: 'C:\\Users\\hangu\\AppData\\Local\\Microsoft\\WindowsApps'
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "E:\SDPPS\desktop_agent\agent.py", line 14, in <module>
+    from desktop_agent.collectors.snapshot import SnapshotCollector
+  File "E:\SDPPS\desktop_agent\collectors\__init__.py", line 1, in <module>
+    from .keyboard_collector import KeyboardCollector
+  File "E:\SDPPS\desktop_agent\collectors\keyboard_collector.py", line 9, in <module>
+    from pynput import keyboard
+ModuleNotFoundError: No module named 'pynput'

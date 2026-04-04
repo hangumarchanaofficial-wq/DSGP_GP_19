@@ -1,0 +1,3 @@
+[Auth] SDPPS Authentication Server starting on http://127.0.0.1:5001
+ * Serving Flask app 'auth_server'
+ * Debug mode: off

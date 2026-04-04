@@ -4,18 +4,15 @@ import Footer from "../components/Footer";
 import { useTheme } from "../context/ThemeContext";
 import {
   CalendarCheck,AlertTriangle,Coffee,Brain,Play,X,Trash2,RefreshCw,AlertCircle,
-  Zap,Flame,Trophy,TrendingUp,Sparkles,Pause,ArrowRight,ChevronDown,
+  Zap,Flame,Trophy,TrendingUp,Sparkles,Pause,ArrowRight,
 } from "lucide-react";
-import { FocusTimer, PriorityDot, ProbabilityRing, StatusBadge, Timeline } from "./planner/PlannerSections";
+import { FocusTimer, PriorityDot, ProbabilityRing, StatusBadge } from "./planner/PlannerSections";
 import {
   formatClockDuration,
   formatCompactStudyDuration,
   formatHoursMinutesFromSeconds,
   formatSleepDuration,
-  formatStudyDuration,
   getSleepDateKey,
-  getSleepStorageKey,
-  getSliderFillPercentage,
   getPlannerApiUrl,
   getSocialStorageKey,
   getTaskStartTime,
@@ -27,8 +24,6 @@ import {
   writeSocialEntry,
   clampSleepMinutes,
 } from "./planner/plannerUtils";
-
-import { PlannerInsights } from "./PlannerInsights";
 
 
 // Main planner page that combines task management, timers, and prediction results.
@@ -326,8 +321,6 @@ export default function Planner() {
 
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("all");
-  const [profileOpen, setProfileOpen] = useState(true);
 
   const [form, setForm] = useState({
     age: 0,
@@ -400,12 +393,6 @@ export default function Planner() {
 
   // Updates a single field inside the student profile form state.
   const update = (key, val) => setForm((f) => ({ ...f, [key]: val }));
-  const parseNonNegativeNumber = (value) => {
-    if (value === "") return 0;
-    const parsed = Number(value);
-    if (Number.isNaN(parsed) || parsed < 0) return 0;
-    return parsed;
-  };
   const showPlannerNotice = useCallback((title, message, tone = "warning") => {
     setPlannerNotice({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1035,24 +1022,7 @@ export default function Planner() {
 
  
 
-  // Filters and sorts tasks for the currently selected planner tab.
-  const filteredTasks = useMemo(() => {
-    let visibleTasks = tasks;
-
-    if (activeTab === "active")
-      visibleTasks = tasks.filter(
-        (t) =>
-          t.status === "active" ||
-          t.status === "pending" ||
-          t.status === "rescheduled",
-      );
-    if (activeTab === "completed")
-      visibleTasks = tasks.filter((t) => t.status === "completed");
-    if (activeTab === "missed")
-      visibleTasks = tasks.filter((t) => t.status === "missed");
-
-    return [...visibleTasks].sort(sortTasksByStartTime);
-  }, [tasks, activeTab]);
+  const filteredTasks = useMemo(() => [...tasks].sort(sortTasksByStartTime), [tasks]);
 
   const feedbackConf = {
     recovery: { icon: Coffee, color: "#ef4444" },
@@ -1083,13 +1053,22 @@ export default function Planner() {
   const socialLimitExceeded = liveSocialSeconds >= 2 * 3600;
   const todayStudySeconds =
     persistedTodayStudySeconds + (isRunning && activeTaskId ? getCurrentSessionElapsedSeconds() : 0);
-  const todayStudyLabel = formatStudyDuration(todayStudySeconds);
   const statusTone = distractionState?.is_distracted ? "#ef4444" : "#10b981";
   const statusLabel = distractionState
     ? distractionState.is_distracted
       ? `Distracted ${Math.round((distractionState.confidence || 0) * 100)}%`
       : "Focused"
     : "Monitoring";
+  const activeTask = tasks.find((t) => t.status === "active") || null;
+  const nextPlannedTask =
+    [...tasks]
+      .filter((t) => t.status === "pending" || t.status === "rescheduled")
+      .sort(sortTasksByStartTime)[0] || null;
+  const plannerSummaryText = activeTask
+    ? `You are currently working on ${activeTask.subject}.`
+    : nextPlannedTask
+      ? `Your next planned task is ${nextPlannedTask.subject}.`
+      : "Add your first task to build a simple study plan for today.";
 
   useEffect(() => {
     latestFormRef.current = form;
@@ -1403,14 +1382,14 @@ export default function Planner() {
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span className="text-[11px] font-semibold">
-                    AI Insights & Planning
+                    Simple Study Planner
                   </span>
                 </div>
                 <h2
                   className="text-2xl font-black leading-tight max-w-[620px] mb-2"
                   style={{ color: "var(--text-primary)" }}
                 >
-                  {currentTime.getHours() < 12 ? "Good morning! Ready for a productive day?" : currentTime.getHours() < 18 ? "Good afternoon! Keep the momentum going." : "Good evening! Let's finish today strong."}
+                  {currentTime.getHours() < 12 ? "Plan your study day in a few quick steps." : currentTime.getHours() < 18 ? "Keep today simple and stay on track." : "Wrap up the day with a clear study plan."}
                 </h2>
                 <p
                   className="text-sm max-w-[500px] leading-relaxed font-medium"
@@ -1483,13 +1462,13 @@ export default function Planner() {
                     className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    Social Timer
+                    Social Check
                   </p>
                   <h2
                     className="text-sm font-bold"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    Today&apos;s Time: {dailySocialLabel}
+                    Social time today: {dailySocialLabel}
                   </h2>
                 </div>
                 <div
@@ -1560,188 +1539,93 @@ export default function Planner() {
                   style={{ color: socialLimitExceeded ? "#ef4444" : "var(--text-muted)" }}
                 >
                   {socialLimitExceeded
-                    ? "Warning: Daily social media limit exceeded."
-                    : "Auto-stops when a study task begins."}
+                    ? "You have spent a lot of time on social apps today."
+                    : "This stops automatically when you start a study task."}
                 </p>
               </div>
             </section>
 
             <section className="glass-card flex flex-col h-full p-6 transition-all hover:shadow-lg">
-              <button
-                onClick={() => setProfileOpen(!profileOpen)}
-                className="w-full flex items-center justify-between mb-4 group"
-              >
-                <div className="text-left">
-                  <p
-                    className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Inputs
-                  </p>
-                  <h2
-                    className="text-sm font-bold"
-                    style={{ color: "var(--text-primary)" }}
-                  >
-                    Student Profile
-                  </h2>
-                </div>
-                <div 
-                  className="w-8 h-8 rounded-full flex items-center justify-center transition-colors group-hover:bg-[rgba(255,255,255,0.05)]"
+              <div className="text-left mb-5">
+                <p
+                  className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
+                  style={{ color: "var(--text-muted)" }}
                 >
-                  <ChevronDown
-                    className={`w-4 h-4 transition-transform ${profileOpen ? "rotate-180" : ""}`}
-                    style={{ color: "var(--text-muted)" }}
-                  />
-                </div>
-              </button>
+                  Study Check
+                </p>
+                <h2
+                  className="text-sm font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  Keep these three numbers realistic
+                </h2>
+                <p
+                  className="text-[11px] mt-2 leading-relaxed"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  The planner mainly looks at study time, sleep, and social time. Keep them updated and the advice stays useful.
+                </p>
+              </div>
 
-              <div className={`space-y-6 transition-all duration-300 overflow-hidden ${profileOpen ? 'opacity-100 max-h-[500px]' : 'opacity-0 max-h-0'}`}>
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Age Input */}
-                  <div>
-                    <label
-                      className="text-[10px] uppercase tracking-wider font-bold block mb-2"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      Age
-                    </label>
-                    <div className="relative group">
-                      <input
-                        type="number"
-                        min={0}
-                        max={35}
-                        value={form.age}
-                        onChange={(e) =>
-                          update("age", Math.min(35, parseNonNegativeNumber(e.target.value)))
-                        }
-                        className="w-full px-4 py-3 rounded-xl text-sm font-bold outline-none transition-all"
-                        style={{
-                          background: "var(--bg-elevated)",
-                          color: "var(--text-primary)",
-                          border: "1px solid var(--border)",
-                          boxShadow: "inset 0 2px 4px rgba(0,0,0,0.05)",
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Gender Toggle */}
-                  <div>
-                    <label
-                      className="text-[10px] uppercase tracking-wider font-bold block mb-2"
-                      style={{ color: "var(--text-muted)" }}
-                    >
-                      Gender
-                    </label>
-                    <div className="flex gap-1 p-1 rounded-xl" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}>
-                      {["Male", "Female"].map((g) => (
-                        <button
-                          key={g}
-                          onClick={() => update("gender", g)}
-                          className="flex-1 py-2 rounded-lg text-[11px] font-bold transition-all"
-                          style={{
-                            background:
-                              form.gender === g
-                                ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.85))"
-                                : "transparent",
-                            color:
-                              form.gender === g
-                                ? "#fff"
-                                : "var(--text-muted)",
-                            boxShadow:
-                              form.gender === g
-                                ? "0 4px 12px rgba(99,102,241,0.25)"
-                                : "none",
-                          }}
-                        >
-                          {g}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-5 pt-2">
-                  {[
-                    {
-                      key: "study_hours_per_day",
-                      label: "Study hours / day",
-                      min: 0,
-                      max: 12,
-                      step: 0.5,
-                      color: "#8b5cf6",
-                      ticks: [0, 3, 6, 9, 12],
-                    },
-                    {
-                      key: "sleep_hours",
-                      label: "Sleep hours / day",
-                      min: 0,
-                      max: 12,
-                      step: 0.5,
-                      color: "#06b6d4",
-                      ticks: [0, 3, 6, 9, 12],
-                    },
-                    {
-                      key: "total_social_hours",
-                      label: "Social media hours",
-                      min: 0,
-                      max: 5,
-                      step: 0.1,
-                      color: "#f59e0b",
-                      ticks: [0, 1, 2, 3, 4, 5],
-                    },
-                  ].map(({ key, label, min, max, step, color, ticks }) => (
-                    <div key={key} className="group pb-2">
-                      <div className="flex justify-between items-center mb-3">
-                        <label
-                          className="text-[10px] uppercase tracking-wider font-bold transition-colors group-hover:text-[var(--text-secondary)]"
-                          style={{ color: "var(--text-muted)" }}
-                        >
+              <div className="space-y-5">
+                {[
+                  {
+                    key: "study_hours_per_day",
+                    label: "Study hours",
+                    helper: "How many hours you studied today",
+                    min: 0,
+                    max: 12,
+                    step: 0.5,
+                    color: "#8b5cf6",
+                  },
+                  {
+                    key: "sleep_hours",
+                    label: "Sleep hours",
+                    helper: "How much sleep you got today",
+                    min: 0,
+                    max: 12,
+                    step: 0.5,
+                    color: "#06b6d4",
+                  },
+                  {
+                    key: "total_social_hours",
+                    label: "Social time",
+                    helper: "Time spent on social media today",
+                    min: 0,
+                    max: 5,
+                    step: 0.1,
+                    color: "#f59e0b",
+                  },
+                ].map(({ key, label, helper, min, max, step, color }) => (
+                  <div key={key}>
+                    <div className="flex items-center justify-between gap-3 mb-2">
+                      <div>
+                        <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
                           {label}
-                        </label>
-                        <span
-                          className="text-sm font-black tracking-tight"
-                          style={{ color }}
-                        >
-                          {form[key]}h
-                        </span>
+                        </p>
+                        <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                          {helper}
+                        </p>
                       </div>
-                      <div className="relative w-full h-[6px] rounded-full" style={{ background: "rgba(255,255,255,0.05)" }}>
-                        <div 
-                           className="absolute top-0 left-0 h-full rounded-full transition-all duration-300 pointer-events-none"
-                           style={{ 
-                             width: `${getSliderFillPercentage(form[key], min, max)}%`,
-                             background: color,
-                             boxShadow: `0 0 10px ${color}80`
-                           }}
-                        />
-                        <input
-                          type="range"
-                          min={min}
-                          max={max}
-                          step={step}
-                          value={form[key]}
-                          onChange={(e) =>
-                            update(key, parseFloat(e.target.value))
-                          }
-                          className="absolute inset-0 w-full opacity-0 cursor-pointer"
-                        />
-                      </div>
-                      <div className="relative w-full mt-2 h-4">
-                        {ticks.map((tick) => (
-                          <div 
-                            key={tick}
-                            className="absolute flex flex-col items-center -ml-2 w-4"
-                            style={{ left: `${((tick - min) / (max - min)) * 100}%` }}
-                          >
-                            <div className="w-[1px] h-1.5 mb-0.5" style={{ background: "var(--border)" }}></div>
-                            <span className="text-[8px] font-semibold" style={{ color: "var(--text-muted)" }}>{tick}</span>
-                          </div>
-                        ))}
-                      </div>
+                      <span className="text-sm font-black tracking-tight" style={{ color }}>
+                        {form[key]}h
+                      </span>
                     </div>
-                  ))}
-                </div>
+                    <input
+                      type="range"
+                      min={min}
+                      max={max}
+                      step={step}
+                      value={form[key]}
+                      onChange={(e) => update(key, parseFloat(e.target.value))}
+                      className="slider-input w-full"
+                      style={{
+                        "--slider-fill": `${((form[key] - min) / (max - min)) * 100}%`,
+                        "--slider-color": color,
+                      }}
+                    />
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -1758,7 +1642,7 @@ export default function Planner() {
                     className="text-sm font-bold"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    How long did you sleep today?
+                    Log your sleep in a simple way
                   </h2>
                 </div>
                 <div className="text-right flex flex-col items-end">
@@ -1837,7 +1721,7 @@ export default function Planner() {
                     className="text-xs font-bold mb-4"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    How many hours did you sleep last night?
+                    How long did you sleep last night?
                   </p>
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
@@ -1962,14 +1846,14 @@ export default function Planner() {
                     boxShadow: "0 4px 14px rgba(16,185,129,0.25)",
                   }}
                 >
-                  Add Additional Sleep Time
+                  Add More Sleep
                 </button>
                 
                 <p
                   className="text-[10px] font-medium leading-relaxed mt-4 text-center px-2"
                   style={{ color: sleepError ? "#ef4444" : "var(--text-muted)" }}
                 >
-                  {sleepError || `Logs sync locally under ${getSleepStorageKey(sleepDateKey)}`}
+                  {sleepError || "You can update this again later if you nap."}
                 </p>
               </div>
             </section>
@@ -2005,7 +1889,7 @@ export default function Planner() {
                       className="text-sm font-bold"
                       style={{ color: "var(--text-primary)" }}
                     >
-                      Tasks{" "}
+                      Today&apos;s Tasks{" "}
                       {taskStats ? (
                         <span
                           className="font-normal"
@@ -2034,29 +1918,8 @@ export default function Planner() {
                         : "0 4px 12px rgba(16,185,129,0.3)",
                     }}
                   >
-                    {showAddTask ? "Close Loader" : "Add Task"}
+                    {showAddTask ? "Close Form" : "Add Task"}
                   </button>
-                </div>
-
-                <div className="flex gap-2 mb-6 flex-wrap p-1 rounded-2xl" style={{ background: "rgba(15,23,42,0.2)", border: "1px solid var(--border)", width: "fit-content" }}>
-                  {["all", "active", "completed", "missed"].map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className="px-4 py-2 rounded-xl text-xs font-bold capitalize transition-all"
-                      style={{
-                        color: activeTab === tab ? "#fff" : "var(--text-muted)",
-                        background:
-                          activeTab === tab
-                            ? "linear-gradient(to right, #8b5cf6, #6366f1)"
-                            : "transparent",
-                        border: "1px solid transparent",
-                        boxShadow: activeTab === tab ? "0 4px 12px rgba(139,92,246,0.3)" : "none"
-                      }}
-                    >
-                      {tab}
-                    </button>
-                  ))}
                 </div>
 
                 {showAddTask && (
@@ -2256,9 +2119,7 @@ export default function Planner() {
                         className="text-xs font-medium"
                         style={{ color: "var(--text-muted)" }}
                       >
-                        {activeTab === "all"
-                          ? "No tasks yet"
-                          : `No ${activeTab} tasks`}
+                        No tasks yet. Add one small study task to get started.
                       </p>
                     </div>
                   ) : (
@@ -2555,11 +2416,11 @@ export default function Planner() {
                       </h3>
 
                       <p
-                        className="text-xs font-medium"
+                        className="text-xs font-medium max-w-[280px]"
                         style={{ color: "var(--text-muted)" }}
                       >
                         <span className={result.prediction === 1 ? "text-emerald-400" : "text-rose-400"}>{(result.task_completion_probability * 100).toFixed(1)}%</span>
-                        {" "}probability
+                        {" "}chance of finishing your current plan
                         {result.original_probability !==
                           result.task_completion_probability && (
                           <span style={{ opacity: 0.6 }}>
@@ -2643,7 +2504,7 @@ export default function Planner() {
                               className="text-xs font-semibold"
                               style={{ color: "var(--text-primary)" }}
                             >
-                              AI Feedback
+                              Simple advice
                             </h3>
                           </div>
                           <p
@@ -2807,15 +2668,15 @@ export default function Planner() {
                     className="text-xl font-bold tracking-tight mb-2"
                     style={{ color: "var(--text-primary)" }}
                   >
-                    Ready to analyze
+                    Planner ready
                   </h3>
                   <p
                     className="text-xs max-w-[280px] leading-relaxed mb-5"
                     style={{ color: "var(--text-muted)" }}
                   >
                     {canShowPrediction
-                      ? "Build your task list, tune the profile, and run the planner for a probability-based study recommendation."
-                      : "Add last night's sleep in the sleep log first. The prediction will appear after the student saves that entry."}
+                      ? "Add your tasks and sleep. The planner will show a simple study suggestion automatically."
+                      : "Add last night's sleep first. Then the planner can show your study suggestion."}
                   </p>
                   <div className="grid grid-cols-2 gap-3">
                     {[
@@ -2851,11 +2712,6 @@ export default function Planner() {
             </div>
           </div>
         </div>
-        {/* ── Planner Insights: Analytics, Profile & Smart Schedule ── */}
-        <section className="px-6 lg:px-8 py-4 pb-8 space-y-3">
-          <PlannerInsights />
-        </section>
-
         <Footer />
       </main>
 
