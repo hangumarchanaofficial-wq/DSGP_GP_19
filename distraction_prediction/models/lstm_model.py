@@ -67,3 +67,14 @@ class DistractionLSTM(nn.Module):
         if return_attention:
             return logits, weights
         return logits
+
+    def forward_with_attention(self, x: torch.Tensor):
+        """Explicit attention-returning forward used by the live predictor.
+        Returns (logits, attention_weights) where weights shape is (batch, seq_len).
+        """
+        lstm_out, _ = self.lstm(x)
+        context, weights = self.attention(lstm_out)
+        context = self.norm(context)
+        context = self.dropout(context)
+        logits = self.head(context).squeeze(-1)
+        return logits, weights
