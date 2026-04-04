@@ -1059,11 +1059,27 @@ class AdaptivePlanner:
         elif 'total_social_hours' not in df.columns:
             df['total_social_hours'] = 0.0
 
-        feature_cols = [c for c in NUMERIC_COLS if c in df.columns]
-        if not feature_cols:
-            return {'success': False, 'error': 'No usable numeric feature columns found.'}
+        features = [
+            'age',
+            'gender',
+            'part_time_job',
+            'study_hours_per_day',
+            'sleep_hours',
+            'total_social_hours',
+        ]
+        available = [f for f in features if f in df.columns]
+        if not available:
+            return {'success': False, 'error': 'No usable planner feature columns found.'}
 
-        X = df[feature_cols].fillna(df[feature_cols].median())
+        X = df[available].copy()
+        numeric_available = [c for c in NUMERIC_COLS if c in X.columns]
+        if numeric_available:
+            X[numeric_available] = X[numeric_available].fillna(X[numeric_available].median())
+
+        cat_cols = [c for c in ('gender', 'part_time_job') if c in X.columns]
+        if cat_cols:
+            X = pd.get_dummies(X, columns=cat_cols, drop_first=True)
+
         y = df['target']
 
         if HAS_SMOTE:
@@ -1077,8 +1093,12 @@ class AdaptivePlanner:
             X, y, test_size=0.2, random_state=42, stratify=y)
 
         scaler = StandardScaler()
-        X_train_s = scaler.fit_transform(X_train)
-        X_test_s = scaler.transform(X_test)
+        X_train_s = X_train.copy()
+        X_test_s = X_test.copy()
+        scale_cols = [c for c in NUMERIC_COLS if c in X_train_s.columns]
+        if scale_cols:
+            X_train_s.loc[:, scale_cols] = scaler.fit_transform(X_train_s[scale_cols])
+            X_test_s.loc[:, scale_cols] = scaler.transform(X_test_s[scale_cols])
 
         clf = RandomForestClassifier(
             n_estimators=200, max_depth=8, min_samples_split=4,
@@ -1088,7 +1108,7 @@ class AdaptivePlanner:
         acc = accuracy_score(y_test, clf.predict(X_test_s))
         self.model = clf
         self.scaler = scaler
-        self.feature_columns = feature_cols
+        self.feature_columns = list(X.columns)
         self._save_model()
 
         print(f'[AdaptivePlanner] Training complete. Test accuracy: {acc:.3f}')
@@ -1107,45 +1127,188 @@ class AdaptivePlanner:
 
     # ── Prediction ───────────────────────────────────────────────
 
+    def _prepare_prediction_features(self, user_data: dict) -> pd.DataFrame:
+        """
+        Build a single-row feature frame aligned to the saved planner model.
+        Supports both numeric-only models and older models that include
+        one-hot categorical columns.
+        """
+        row = {}
+
+        for col in NUMERIC_COLS:
+            try:
+                row[col] = float(user_data.get(col, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                row[col] = 0.0
+
+        gender = str(user_data.get('gender', '') or '').strip()
+        part_time_job = str(user_data.get('part_time_job', '') or '').strip()
+        row['gender_Male'] = 1 if gender == 'Male' else 0
+        row['gender_Other'] = 1 if gender == 'Other' else 0
+        row['part_time_job_Yes'] = 1 if part_time_job == 'Yes' else 0
+
+        df = pd.DataFrame([row])
+        expected_cols = list(self.feature_columns or [])
+        if expected_cols:
+            for col in expected_cols:
+                if col not in df.columns:
+                    df[col] = 0
+            df = df[expected_cols]
+
+        scale_cols = [c for c in NUMERIC_COLS if c in df.columns]
+        if scale_cols and self.scaler is not None:
+            df.loc[:, scale_cols] = self.scaler.transform(df[scale_cols])
+
+        return df
+
+    def _model_supports_profile_inputs(self) -> bool:
+        expected = {'gender_Male', 'part_time_job_Yes'}
+        return expected.issubset(set(self.feature_columns or []))
+
+    def _study_fatigue_probability(self, study_hours: float) -> float:
+        study_hours = max(0.0, float(study_hours or 0.0))
+        fatigue_score = 0.98 - (0.03 * study_hours) - (0.003 * (study_hours ** 2))
+        return max(0.05, min(fatigue_score, 0.98))
+
+    def _generate_feedback(self, probability: float, user_data: dict,
+                           distraction_state: dict = None,
+                           recommendation: str = 'proceed') -> dict:
+        sleep = float(user_data.get('sleep_hours', 7) or 7)
+        social = float(user_data.get('total_social_hours', 0) or 0)
+        app_label = str((distraction_state or {}).get('app_cat_label', '')).lower()
+
+        if recommendation == 'reschedule':
+            feedback_type = 'reschedule'
+            message = random.choice(self.feedback_messages['reschedule'])
+            suggested_action = 'Review the suggested new slot and restart with a shorter block'
+        elif distraction_state and distraction_state.get('label') == 'DISTRACTED':
+            if 'social' in app_label or 'entertainment' in app_label:
+                feedback_type = 'social_media'
+                message = random.choice(self.feedback_messages['social_media'])
+                suggested_action = 'Leave the distracting app and enable blocking if needed'
+            else:
+                feedback_type = 'distracted'
+                message = random.choice(self.feedback_messages['distracted'])
+                suggested_action = 'Close distracting apps and do a short refocus sprint'
+        elif sleep < 5:
+            feedback_type = 'recovery'
+            message = random.choice(self.feedback_messages['recovery'])
+            suggested_action = 'Take a short break or switch to a lighter task first'
+        elif probability >= 0.7:
+            feedback_type = 'focused'
+            message = random.choice(self.feedback_messages['focused'])
+            suggested_action = 'Continue with your plan'
+        elif social > 3:
+            feedback_type = 'social_media'
+            message = random.choice(self.feedback_messages['social_media'])
+            suggested_action = 'Reduce social time before the next session'
+        else:
+            feedback_type = 'recovery'
+            message = random.choice(self.feedback_messages['recovery'])
+            suggested_action = 'Do the next task with a smaller goal'
+
+        return {
+            'feedback_type': feedback_type,
+            'message': message,
+            'suggested_action': suggested_action,
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        }
+
     def predict(self, user_data: dict, task: dict = None,
                 distraction_state: dict = None, content_state: dict = None) -> dict:
         """Predict completion probability for a given user context."""
-        if self.model is None:
-            return {
-                'success': False,
-                'error': 'Model not trained. Call train_model() first.',
-                'completion_probability': 0.5,
+
+        # ── Zero-input guard ────────────────────────────────────────
+        # When the user has not entered meaningful data (all activity
+        # values are zero / near-zero), the model would produce a
+        # misleading non-zero probability.  Return 0 immediately.
+        _study = float(user_data.get('study_hours_per_day', 0) or 0)
+        _sleep = float(user_data.get('sleep_hours', 0) or 0)
+        _social = float(user_data.get('total_social_hours', 0) or 0)
+        _all_zero = (_study < 0.01 and _sleep < 0.01 and _social < 0.01)
+
+        if _all_zero:
+            zero_feedback = {
+                'feedback_type': 'recovery',
+                'message': 'Enter your study, sleep, and social hours to get a meaningful prediction.',
+                'suggested_action': 'Fill in the planner inputs above to generate your plan.',
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
+            return {
+                'success': True,
+                'base_probability': 0.0,
+                'adjusted_probability': 0.0,
+                'completion_probability': 0.0,
+                'prediction': 0,
+                'task_completion_probability': 0.0,
+                'original_probability': 0.0,
+                'rule_based_probability': 0.0,
+                'blended_probability': 0.0,
+                'planner_decision': 'Fill in the planner inputs to generate a prediction.',
+                'new_slot': None,
+                'recommendation': 'no_data',
+                'confidence_tier': 'none',
+                'distraction_penalty': 0.0,
+                'distraction_adjustment': 0.0,
+                'content_penalty': 0.0,
+                'profiler_adjustment': 0.0,
+                'feedback': zero_feedback,
+                'social_alert': None,
+                'reschedule': None,
+                'reschedule_info': None,
+                'distraction_streak': self.distraction_streak,
+                'social_alert_count': self.social_alert_count,
+                'task_stats': self.task_manager.get_stats(),
+                'streak_info': self.task_manager.get_streak_info(),
+                'distraction_aware': distraction_state is not None,
+                'live_distraction': (
+                    {
+                        'is_distracted': distraction_state.get('is_distracted', False),
+                        'confidence': distraction_state.get('confidence', 0),
+                        'dominant_app': distraction_state.get('dominant_app', 'unknown'),
+                        'streak': self.distraction_streak,
+                    }
+                    if distraction_state else None
+                ),
+            }
+        # ── End zero-input guard ────────────────────────────────────
 
-        feature_vec = []
-        for col in self.feature_columns:
-            val = user_data.get(col, 0.0)
-            try:
-                val = float(val)
-            except (TypeError, ValueError):
-                val = 0.0
-            feature_vec.append(val)
+        if self.model is None or not self._model_supports_profile_inputs():
+            trained = self.train_model()
+            if not trained.get('success'):
+                return {
+                    'success': False,
+                    'error': trained.get('error', 'Model not trained.'),
+                    'completion_probability': 0.5,
+                }
 
-        X = np.array(feature_vec).reshape(1, -1)
-        X_scaled = self.scaler.transform(X)
-        prob = float(self.model.predict_proba(X_scaled)[0][1])
+        X_prepared = self._prepare_prediction_features(user_data)
+        model_prob = float(self.model.predict_proba(X_prepared)[0][1])
+        original_prob = model_prob
+
+        study_hours = float(user_data.get('study_hours_per_day', 0) or 0)
+        sleep_hours = float(user_data.get('sleep_hours', 0) or 0)
+        social_hours = float(user_data.get('total_social_hours', 0) or 0)
+
+        study_prob = self._study_fatigue_probability(study_hours)
+        sleep_adjustment = (sleep_hours - 7.0) * 0.035
+        social_adjustment = social_hours * 0.11
+        rule_prob = max(0.0, min(study_prob + sleep_adjustment - social_adjustment, 1.0))
+
+        blended_prob = (0.15 * model_prob) + (0.85 * rule_prob)
 
         distraction_penalty = 0.0
-        if distraction_state:
-            dist_prob = float(distraction_state.get('final_prob', 0.0))
-            if dist_prob >= 0.7:
-                distraction_penalty = 0.15
-            elif dist_prob >= 0.5:
-                distraction_penalty = 0.08
-            streak = int(distraction_state.get('distraction_streak', 0))
-            distraction_penalty += min(streak * 0.02, 0.10)
+        if distraction_state and distraction_state.get('is_distracted'):
+            distraction_penalty = float(distraction_state.get('confidence', 0) or 0) * 0.30
 
         content_penalty = 0.0
         if content_state:
             if not content_state.get('is_educational', True):
                 content_penalty = 0.05
 
-        adjusted_prob = float(np.clip(prob - distraction_penalty - content_penalty, 0.05, 0.98))
+        adjusted_prob = float(
+            np.clip(blended_prob - distraction_penalty - content_penalty, 0.05, 0.98)
+        )
 
         now = datetime.now()
         hour_rate = self.profiler.get_hourly_rate(now.hour)
@@ -1156,7 +1319,7 @@ class AdaptivePlanner:
         if adjusted_prob >= 0.70:
             recommendation = 'proceed'
             tier = 'high'
-        elif adjusted_prob >= 0.45:
+        elif adjusted_prob >= 0.40:
             recommendation = 'caution'
             tier = 'medium'
         else:
@@ -1164,38 +1327,111 @@ class AdaptivePlanner:
             tier = 'low'
 
         if distraction_state and distraction_state.get('label') == 'DISTRACTED':
-            app_label = distraction_state.get('app_cat_label', '')
-            if 'social' in app_label or 'entertainment' in app_label:
-                feedback = random.choice(self.feedback_messages['social_media'])
-                self.social_alert_count += 1
-            else:
-                feedback = random.choice(self.feedback_messages['distracted'])
             self.distraction_streak += 1
         else:
-            feedback = random.choice(self.feedback_messages['focused'])
             self.distraction_streak = 0
 
         self.last_distraction_state = distraction_state
 
-        reschedule_info = None
-        if recommendation == 'reschedule' and task:
-            reschedule_info = self._compute_reschedule(task, adjusted_prob)
+        active_task = task or self.task_manager.get_active_task()
+        new_badges = self.task_manager.update_streak(adjusted_prob >= 0.5)
+        if active_task and distraction_state:
+            focus_score = 1 - float(distraction_state.get('final_prob', 0.5) or 0.5)
+            self.task_manager.update_focus_score(active_task['id'], focus_score)
+            if distraction_state.get('is_distracted'):
+                self.task_manager.record_distraction_event(active_task['id'])
 
-        return {
+        reschedule_info = None
+        if recommendation == 'reschedule' and active_task:
+            reschedule_info = self._compute_reschedule(active_task, adjusted_prob)
+
+        prediction = int(adjusted_prob >= 0.5)
+        planner_decision = 'Continue current task'
+        new_slot = None
+
+        if reschedule_info:
+            new_slot = reschedule_info.get('suggested_slot')
+            subject = active_task.get('subject', 'Current task') if active_task else 'Current task'
+            planner_decision = f'Task "{subject}" should be moved to a better slot'
+        elif recommendation == 'caution':
+            planner_decision = 'Continue with shorter focus blocks'
+        elif recommendation == 'reschedule':
+            planner_decision = 'Ask user whether to rest and reschedule'
+
+        feedback_payload = self._generate_feedback(
+            adjusted_prob,
+            user_data,
+            distraction_state=distraction_state,
+            recommendation=recommendation,
+        )
+
+        social_alert = None
+        app_label = str((distraction_state or {}).get('app_cat_label', '')).lower()
+        if social_hours > 1 or (
+            distraction_state and distraction_state.get('label') == 'DISTRACTED' and
+            ('social' in app_label or 'entertainment' in app_label)
+        ):
+            self.social_alert_count += 1
+            if social_hours > 1 or 'social' in app_label or 'entertainment' in app_label:
+                social_alert = {
+                    'type': 'social_media_alert',
+                    'message': feedback_payload['message'],
+                    'suggested_action': feedback_payload['suggested_action'],
+                    'alert_count': self.social_alert_count,
+                }
+
+        result = {
             'success': True,
-            'base_probability': round(prob, 4),
+            'base_probability': round(model_prob, 4),
             'adjusted_probability': round(adjusted_prob, 4),
             'completion_probability': round(adjusted_prob, 4),
+            'prediction': prediction,
+            'task_completion_probability': round(adjusted_prob, 4),
+            'original_probability': round(original_prob, 4),
+            'rule_based_probability': round(rule_prob, 4),
+            'blended_probability': round(blended_prob, 4),
+            'planner_decision': planner_decision,
+            'new_slot': new_slot,
             'recommendation': recommendation,
             'confidence_tier': tier,
             'distraction_penalty': round(distraction_penalty, 4),
+            'distraction_adjustment': round(distraction_penalty, 4),
             'content_penalty': round(content_penalty, 4),
             'profiler_adjustment': round(profiler_adj, 4),
-            'feedback': feedback,
+            'feedback': feedback_payload,
+            'social_alert': social_alert,
             'reschedule': reschedule_info,
+            'reschedule_info': (
+                {
+                    'task_subject': active_task.get('subject', 'Current task'),
+                    'new_slot': reschedule_info.get('suggested_slot'),
+                    'planned_start': reschedule_info.get('planned_start'),
+                    'planned_end': reschedule_info.get('planned_end'),
+                    'reason': reschedule_info.get('reason'),
+                    'message': reschedule_info.get('message'),
+                }
+                if reschedule_info and active_task else None
+            ),
             'distraction_streak': self.distraction_streak,
             'social_alert_count': self.social_alert_count,
+            'task_stats': self.task_manager.get_stats(),
+            'streak_info': self.task_manager.get_streak_info(),
+            'distraction_aware': distraction_state is not None,
+            'live_distraction': (
+                {
+                    'is_distracted': distraction_state.get('is_distracted', False),
+                    'confidence': distraction_state.get('confidence', 0),
+                    'dominant_app': distraction_state.get('dominant_app', 'unknown'),
+                    'streak': self.distraction_streak,
+                }
+                if distraction_state else None
+            ),
         }
+
+        if new_badges:
+            result['new_badges'] = new_badges
+
+        return result
 
     # ── Rescheduling ─────────────────────────────────────────────
 

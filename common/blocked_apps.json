@@ -1,8 +1,17 @@
 {
   "apps": [
-    "whatsapp.root.exe",
-    "msedge.exe",
     "spotify.exe",
-    "whatsapp.exe"
+    "vlc.exe",
+    "brawlhalla.exe",
+    "cs2.exe",
+    "gta5.exe",
+    "gta_sa.exe",
+    "hogwartslegacy.exe",
+    "robloxplayerbeta.exe",
+    "titanfall2.exe",
+    "valorant-win64-shipping.exe",
+    "eadesktop.exe",
+    "epicgameslauncher.exe",
+    "steamwebhelper.exe"
   ]
 }

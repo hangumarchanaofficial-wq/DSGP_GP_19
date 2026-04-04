@@ -1,10 +1,33 @@
 import { useEffect, useState } from "react";
-import {
-  AlertTriangle,
-} from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { getPlannerApiUrl, getTaskStartTime } from "./plannerUtils";
 
-// Shared planner UI sections live here so the main page is easier to present.
+// ─── Design primitives (mirrors Analytics.jsx) ──────────────────────────────
+
+function Surface({ children, className = "" }) {
+  return (
+    <div
+      className={`rounded-[28px] bg-gradient-to-b from-[#0d1426] to-[#080d18] ${className}`}
+      style={{
+        boxShadow:
+          "0 18px 42px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.04)",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div className="text-[10px] uppercase tracking-[0.18em] text-slate-500">
+      {children}
+    </div>
+  );
+}
+
+// ─── ProbabilityRing ─────────────────────────────────────────────────────────
+
 export function ProbabilityRing({ value, size = 180 }) {
   const pct = Math.round(value * 100);
   const strokeW = 8;
@@ -13,23 +36,28 @@ export function ProbabilityRing({ value, size = 180 }) {
   const cy = size / 2;
   const circ = 2 * Math.PI * r;
   const offset = circ - (pct / 100) * circ;
-  
-  // Determine color matching standard system scale
+
   const isHigh = pct >= 70;
   const isMid = pct >= 40 && pct < 70;
-  const color = isHigh ? "#10b981" : isMid ? "#f59e0b" : "#ef4444";
-  const glowColor = isHigh ? "rgba(16,185,129,0.3)" : isMid ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)";
-  const bgGlowColor = isHigh ? "rgba(16,185,129,0.12)" : isMid ? "rgba(245,158,11,0.12)" : "rgba(239,68,68,0.12)";
+  const color = isHigh ? "#34d399" : isMid ? "#f59e0b" : "#fb7185";
+  const glow = isHigh
+    ? "rgba(52,211,153,0.3)"
+    : isMid
+    ? "rgba(245,158,11,0.3)"
+    : "rgba(251,113,133,0.3)";
+  const bgGlow = isHigh
+    ? "rgba(52,211,153,0.08)"
+    : isMid
+    ? "rgba(245,158,11,0.08)"
+    : "rgba(251,113,133,0.08)";
 
   return (
     <div
-      className="relative flex items-center justify-center rounded-3xl"
+      className="relative flex items-center justify-center rounded-full"
       style={{
         width: size,
         height: size,
-        background: `radial-gradient(circle at center, ${bgGlowColor} 0%, rgba(15,23,42,0.6) 60%, transparent 100%)`,
-        boxShadow: "inset 0 4px 20px rgba(0,0,0,0.3)",
-        border: "1px solid rgba(255,255,255,0.02)"
+        background: `radial-gradient(circle at center, ${bgGlow} 0%, transparent 70%)`,
       }}
     >
       <svg width={size} height={size} className="transform -rotate-90">
@@ -52,33 +80,58 @@ export function ProbabilityRing({ value, size = 180 }) {
           strokeDasharray={circ}
           strokeDashoffset={offset}
           style={{
-            transition: "stroke-dashoffset 1.5s cubic-bezier(0.4, 0, 0.2, 1)",
-            filter: `drop-shadow(0 0 10px ${glowColor})`,
+            transition: "stroke-dashoffset 1.5s cubic-bezier(0.4,0,0.2,1)",
+            filter: `drop-shadow(0 0 8px ${glow})`,
           }}
         />
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center pt-1">
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
         <span
-          className="font-black tracking-tighter"
-          style={{ 
-            fontSize: size * 0.3, 
-            color,
-            lineHeight: 0.9,
-            textShadow: `0 0 24px ${glowColor}`
-          }}
+          className="font-semibold tabular-nums"
+          style={{ fontSize: size * 0.28, color, lineHeight: 1 }}
         >
           {pct}
         </span>
-        <span 
-          className="text-[10px] font-bold uppercase tracking-[0.25em] mt-1"
-          style={{ color: "var(--text-muted)", opacity: 0.8 }}
-        >
-          Percent
-        </span>
+        <SectionLabel>Percent</SectionLabel>
       </div>
     </div>
   );
 }
+
+// ─── StatusBadge ─────────────────────────────────────────────────────────────
+
+export function StatusBadge({ status }) {
+  const map = {
+    pending:     { color: "#f59e0b", label: "Pending" },
+    active:      { color: "#22d3ee", label: "In Progress" },
+    completed:   { color: "#34d399", label: "Done" },
+    missed:      { color: "#fb7185", label: "Missed" },
+    rescheduled: { color: "#a78bfa", label: "Moved" },
+  };
+  const s = map[status] || map.pending;
+  return (
+    <span
+      className="px-2.5 py-1 rounded-full text-[10px] font-semibold tracking-wide"
+      style={{ background: `${s.color}18`, color: s.color }}
+    >
+      {s.label}
+    </span>
+  );
+}
+
+// ─── PriorityDot ─────────────────────────────────────────────────────────────
+
+export function PriorityDot({ priority }) {
+  const c = { high: "#fb7185", medium: "#f59e0b", low: "#34d399" };
+  return (
+    <div
+      className="w-2 h-2 rounded-full flex-shrink-0"
+      style={{ background: c[priority] || c.medium }}
+    />
+  );
+}
+
+// ─── FocusTimer ──────────────────────────────────────────────────────────────
 
 export function FocusTimer({
   onTasksChanged,
@@ -103,82 +156,56 @@ export function FocusTimer({
         const res = await fetch(getPlannerApiUrl("/api/planner/check-missed"), {
           method: "POST",
         });
-
-        if (!res.ok) {
-          const errText = await res.text();
-          console.error("Missed task check failed:", errText);
-          return;
-        }
-
+        if (!res.ok) return;
         const data = await res.json();
-
-        if (data.missed_tasks && data.missed_tasks.length > 0) {
+        if (data.missed_tasks?.length > 0) {
           setMissedTaskQueue((prev) => {
             const existing = new Set(prev.map((t) => String(t.id)));
-            if (activeMissedTask?.id != null) {
+            if (activeMissedTask?.id != null)
               existing.add(String(activeMissedTask.id));
-            }
-
             const next = [...prev];
             for (const t of data.missed_tasks) {
-              const tid = String(t.id);
-              if (!existing.has(tid)) {
+              if (!existing.has(String(t.id))) {
                 next.push(t);
-                existing.add(tid);
+                existing.add(String(t.id));
               }
             }
             return next;
           });
         }
-      } catch (error) {
-        console.error("Missed task check error:", error);
-      }
+      } catch (_) {}
     }, 5000);
-
     return () => clearInterval(interval);
   }, [activeMissedTask, notificationsMutedUntil]);
 
   useEffect(() => {
     if (notificationsMuted) return;
     if (!activeMissedTask && missedTaskQueue.length > 0) {
-      const [nextTask, ...rest] = missedTaskQueue;
-      setActiveMissedTask(nextTask);
+      const [next, ...rest] = missedTaskQueue;
+      setActiveMissedTask(next);
       setMissedTaskQueue(rest);
     }
   }, [activeMissedTask, missedTaskQueue, notificationsMuted]);
 
   const handleMissedTaskAction = async (action) => {
     if (!activeMissedTask || processingMissedAction) return;
-
     setProcessingMissedAction(true);
     try {
       if (action === "start") {
-        if (typeof onStartTask === "function") {
-          await onStartTask(activeMissedTask);
-        }
+        if (typeof onStartTask === "function") await onStartTask(activeMissedTask);
         return;
       }
-
-      const actionRes = await fetch(
+      await fetch(
         getPlannerApiUrl(`/api/planner/tasks/${activeMissedTask.id}/handle-missed`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action }),
-        },
+        }
       );
-
-      if (!actionRes.ok) {
-        const errText = await actionRes.text();
-        console.error("Missed task action failed:", errText);
-      }
-
-      if (typeof onTasksChanged === "function") {
-        onTasksChanged();
-      }
-    } catch (error) {
-      console.error("Missed task action error:", error);
-    } finally {
+      if (typeof onTasksChanged === "function") onTasksChanged();
+    } catch (_) {}
+    finally {
       setProcessingMissedAction(false);
       setActiveMissedTask(null);
     }
@@ -197,235 +224,226 @@ export function FocusTimer({
 
   return (
     <>
-      <div className="glass-card flex flex-col h-full p-6 transition-all hover:shadow-lg relative overflow-hidden group">
-        {/* Subtle background glow when active */}
-        <div 
-          className={`absolute inset-0 opacity-0 transition-opacity duration-1000 pointer-events-none ${shortBreakActive ? 'opacity-100' : ''}`}
-          style={{
-            background: "radial-gradient(circle at center 40%, rgba(16,185,129,0.05) 0%, transparent 60%)"
-          }}
-        />
-
-        <div className="flex items-start justify-between gap-3 mb-5 relative z-10">
+      {/* ── Break Timer Card ── */}
+      <Surface className="p-6 flex flex-col h-full gap-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
           <div>
-            <p
-              className="text-[10px] uppercase tracking-[0.2em] font-bold mb-1"
-              style={{ color: "var(--text-muted)" }}
-            >
-              Break Timer
-            </p>
-            <h2
-              className="text-sm font-bold"
-              style={{ color: "var(--text-primary)" }}
-            >
+            <SectionLabel>Break Timer</SectionLabel>
+            <h3 className="mt-1 font-serif text-[1.1rem] text-white">
               Take a Breather
-            </h2>
+            </h3>
           </div>
-          <div
-            className="px-3 py-1.5 rounded-full text-[10px] font-bold transition-all"
+          <span
+            className="px-3 py-1 rounded-full text-[10px] font-semibold tracking-wide"
             style={{
-              background: shortBreakActive ? "rgba(16,185,129,0.15)" : "var(--bg-elevated)",
-              color: shortBreakActive ? "#10b981" : "var(--text-muted)",
+              background: shortBreakActive
+                ? "rgba(52,211,153,0.12)"
+                : "rgba(255,255,255,0.04)",
+              color: shortBreakActive ? "#34d399" : "#64748b",
               border: shortBreakActive
-                ? "1px solid rgba(16,185,129,0.3)"
-                : "1px solid var(--border)",
-              boxShadow: shortBreakActive ? "0 0 12px rgba(16,185,129,0.2)" : "none"
+                ? "1px solid rgba(52,211,153,0.25)"
+                : "1px solid rgba(255,255,255,0.06)",
             }}
           >
             {shortBreakActive ? "Running" : "Paused"}
-          </div>
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-5 relative z-10">
-          {breakOptions.map((minutes) => (
-            <button
-              key={minutes}
-              onClick={() =>
-                typeof onBreakMinutesChange === "function" &&
-                onBreakMinutesChange(minutes)
-              }
-              disabled={shortBreakActive}
-              className="px-3 py-3 rounded-xl text-xs font-bold transition-all"
-              style={{
-                background:
-                  breakMinutesInput === minutes
-                    ? "linear-gradient(to right, #10b981, #059669)"
-                    : "var(--bg-elevated)",
-                color: breakMinutesInput === minutes ? "#fff" : "var(--text-muted)",
-                border: breakMinutesInput === minutes ? "1px solid transparent" : "1px solid var(--border)",
-                opacity: shortBreakActive && breakMinutesInput !== minutes ? 0.4 : 1,
-                cursor: shortBreakActive ? "default" : "pointer",
-                boxShadow: breakMinutesInput === minutes ? "0 4px 12px rgba(16,185,129,0.25)" : "inset 0 2px 4px rgba(0,0,0,0.05)",
-                transform: breakMinutesInput === minutes ? "scale(1.02)" : "scale(1)",
-              }}
-            >
-              {minutes} min
-            </button>
-          ))}
+        {/* Duration Selector */}
+        <div className="grid grid-cols-4 gap-2">
+          {breakOptions.map((m) => {
+            const selected = breakMinutesInput === m;
+            return (
+              <button
+                key={m}
+                onClick={() =>
+                  typeof onBreakMinutesChange === "function" &&
+                  onBreakMinutesChange(m)
+                }
+                disabled={shortBreakActive}
+                className="py-2.5 rounded-2xl text-xs font-semibold transition-all"
+                style={{
+                  background: selected
+                    ? "linear-gradient(135deg,#22d3ee,#8b5cf6)"
+                    : "rgba(255,255,255,0.03)",
+                  color: selected ? "#fff" : "#64748b",
+                  border: selected
+                    ? "1px solid transparent"
+                    : "1px solid rgba(255,255,255,0.06)",
+                  opacity: shortBreakActive && !selected ? 0.35 : 1,
+                  boxShadow: selected
+                    ? "0 4px 14px rgba(34,211,238,0.2)"
+                    : "none",
+                }}
+              >
+                {m}m
+              </button>
+            );
+          })}
         </div>
 
+        {/* Countdown */}
         <div
-          className="rounded-2xl p-5 mb-5 text-center transition-all flex flex-col items-center justify-center relative z-10 flex-1"
+          className="flex-1 flex flex-col items-center justify-center rounded-[20px] py-7"
           style={{
-            background: "rgba(15,23,42,0.2)",
-            border: "1px solid rgba(16,185,129,0.1)",
-            boxShadow: "inset 0 2px 10px rgba(0,0,0,0.2), 0 1px 0 rgba(255,255,255,0.02)",
+            background: "rgba(6,11,22,0.6)",
+            border: "1px solid rgba(255,255,255,0.05)",
           }}
         >
-          <div
-            className={`text-6xl font-black tracking-tighter transition-all ${shortBreakActive ? 'scale-105' : ''}`}
+          <span
+            className="font-black tabular-nums tracking-tighter"
             style={{
-              color: shortBreakActive ? "#10b981" : "var(--text-primary)",
-              fontVariantNumeric: "tabular-nums",
-              textShadow: shortBreakActive ? "0 0 20px rgba(16,185,129,0.4)" : "none"
+              fontSize: "3.5rem",
+              lineHeight: 1,
+              color: shortBreakActive ? "#34d399" : "#fff",
+              textShadow: shortBreakActive
+                ? "0 0 24px rgba(52,211,153,0.4)"
+                : "none",
             }}
           >
             {String(mins).padStart(2, "0")}
             <span
-              className={shortBreakActive ? "animate-[pulse_1.5s_ease-in-out_infinite]" : ""}
               style={{
-                color: shortBreakActive ? "#10b981" : "var(--text-muted)",
-                opacity: shortBreakActive ? 1 : 0.3,
+                color: shortBreakActive ? "#34d399" : "#334155",
+                opacity: shortBreakActive ? 1 : 0.5,
               }}
             >
               :
             </span>
             {String(secs).padStart(2, "0")}
-          </div>
-          <p
-            className="text-[10px] mt-2 font-medium"
-            style={{ color: "var(--text-muted)" }}
-          >
+          </span>
+          <p className="mt-3 text-xs text-slate-500">
             {shortBreakActive
               ? "Silence mode engaged."
-              : "Select duration before starting break."}
+              : "Select a duration, then start."}
           </p>
         </div>
 
-        <div className="relative z-10 w-full mb-6">
-           <div
-            className="w-full h-1.5 rounded-full overflow-hidden"
-            style={{ background: "rgba(255,255,255,0.05)" }}
-          >
-            <div
-              className="h-full rounded-full transition-all duration-1000"
-              style={{
-                width: `${Math.max(0, Math.min(progress, 100))}%`,
-                background: "linear-gradient(to right, #34d399, #10b981)",
-                boxShadow: shortBreakActive ? "0 0 10px rgba(16,185,129,0.5)" : "none"
-              }}
-            />
-          </div>
+        {/* Progress bar */}
+        <div
+          className="w-full h-1 rounded-full overflow-hidden"
+          style={{ background: "rgba(255,255,255,0.05)" }}
+        >
+          <div
+            className="h-full rounded-full transition-all duration-1000"
+            style={{
+              width: `${Math.max(0, Math.min(progress, 100))}%`,
+              background: "linear-gradient(to right,#22d3ee,#8b5cf6)",
+              boxShadow: shortBreakActive
+                ? "0 0 8px rgba(34,211,238,0.5)"
+                : "none",
+            }}
+          />
         </div>
 
-        <div className="relative z-10 w-full mt-auto">
-          {shortBreakActive ? (
-            <button
-              onClick={onEndBreak}
-              className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98] relative overflow-hidden flex items-center justify-center"
-              style={{
-                background: "linear-gradient(to right, rgba(239,68,68,0.2), rgba(220,38,38,0.15))",
-                border: "1px solid rgba(239,68,68,0.4)",
-                color: "#ef4444",
-              }}
-            >
-              End Break Early
-            </button>
-          ) : (
-            <button
-              onClick={onStartBreak}
-              className="w-full py-3.5 rounded-xl text-xs font-bold text-white transition-all transform active:scale-[0.98] relative overflow-hidden flex items-center justify-center"
-              style={{
-                background: "linear-gradient(to right, #10b981, #059669)",
-                boxShadow: "0 4px 14px rgba(16,185,129,0.25)",
-              }}
-            >
-              Start Break Timer
-            </button>
-          )}
-
-          <p
-            className="text-[10px] font-medium leading-relaxed mt-4 text-center px-2"
-            style={{ color: "var(--text-muted)" }}
+        {/* Action button */}
+        {shortBreakActive ? (
+          <button
+            onClick={onEndBreak}
+            className="w-full py-3 rounded-2xl text-sm font-semibold transition-all"
+            style={{
+              background: "rgba(251,113,133,0.1)",
+              border: "1px solid rgba(251,113,133,0.3)",
+              color: "#fb7185",
+            }}
           >
-            No alerts or reminders will show until the break timer ends.
-          </p>
-        </div>
-      </div>
+            End Break Early
+          </button>
+        ) : (
+          <button
+            onClick={onStartBreak}
+            className="w-full py-3 rounded-2xl text-sm font-semibold text-white transition-all"
+            style={{
+              background: "linear-gradient(135deg,#22d3ee,#8b5cf6)",
+              boxShadow: "0 4px 16px rgba(34,211,238,0.2)",
+            }}
+          >
+            Start Break
+          </button>
+        )}
 
+        <p className="text-[11px] text-slate-600 text-center leading-relaxed">
+          Alerts are silenced for the duration of the break.
+        </p>
+      </Surface>
+
+      {/* ── Missed Task Modal ── */}
       {activeMissedTask && !notificationsMuted && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center px-4"
-          style={{ background: "rgba(2, 6, 23, 0.72)", backdropFilter: "blur(8px)" }}
+          style={{
+            background: "rgba(4,8,22,0.78)",
+            backdropFilter: "blur(10px)",
+          }}
         >
           <div
-            className="w-full max-w-md rounded-[30px] p-6 planner-card"
+            className="w-full max-w-md rounded-[28px] p-7"
             style={{
-              border: "1px solid rgba(255,255,255,0.1)",
-              boxShadow: "0 28px 70px rgba(2,6,23,0.48)",
+              background:
+                "linear-gradient(160deg,#0d1426 0%,#080d18 100%)",
+              boxShadow:
+                "0 28px 70px rgba(0,0,0,0.56), inset 0 1px 0 rgba(255,255,255,0.05)",
             }}
           >
+            {/* Badge */}
             <div
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-4"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-5"
               style={{
-                background: "rgba(239,68,68,0.14)",
-                color: "#fca5a5",
-                border: "1px solid rgba(239,68,68,0.2)",
+                background: "rgba(251,113,133,0.1)",
+                border: "1px solid rgba(251,113,133,0.2)",
+                color: "#fb7185",
               }}
             >
               <AlertTriangle className="w-3.5 h-3.5" />
               <span className="text-[11px] font-semibold">Missed Task</span>
             </div>
 
-            <h3
-              className="text-xl font-black tracking-tight mb-1"
-              style={{ color: "var(--text-primary)" }}
-            >
+            <h3 className="font-serif text-xl text-white mb-1">
               {activeMissedTask.subject}
             </h3>
-            <p
-              className="text-xs mb-5"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Choose what to do with this missed task.
+            <p className="text-sm text-slate-500 mb-6">
+              Choose what to do with this task.
             </p>
 
-            <div className="grid grid-cols-1 gap-3">
+            <div className="flex flex-col gap-3">
               <button
                 onClick={() => handleMissedTaskAction("reschedule")}
                 disabled={processingMissedAction}
-                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white"
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white transition-all"
                 style={{
                   background:
-                    "linear-gradient(135deg, rgba(129,140,248,0.96), rgba(99,102,241,0.82))",
+                    "linear-gradient(135deg,#8b5cf6,#6366f1)",
+                  boxShadow: "0 4px 16px rgba(139,92,246,0.25)",
                 }}
               >
-                {processingMissedAction ? "Working..." : "Reschedule To Next Free Slot"}
+                {processingMissedAction ? "Working…" : "Reschedule to Next Free Slot"}
               </button>
 
               <button
                 onClick={() => handleMissedTaskAction("start")}
                 disabled={processingMissedAction}
-                className="w-full py-3.5 rounded-2xl text-sm font-semibold"
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold transition-all"
                 style={{
-                  color: "#10b981",
-                  background: "rgba(16,185,129,0.12)",
-                  border: "1px solid rgba(16,185,129,0.2)",
+                  background: "rgba(52,211,153,0.1)",
+                  border: "1px solid rgba(52,211,153,0.2)",
+                  color: "#34d399",
                 }}
               >
-                {processingMissedAction ? "Working..." : "Start The Task"}
+                {processingMissedAction ? "Working…" : "Start Now"}
               </button>
 
               <button
                 onClick={() => handleMissedTaskAction("delete")}
                 disabled={processingMissedAction}
-                className="w-full py-3.5 rounded-2xl text-sm font-semibold text-white"
+                className="w-full py-3.5 rounded-2xl text-sm font-semibold transition-all"
                 style={{
-                  background:
-                    "linear-gradient(135deg, rgba(239,68,68,0.96), rgba(190,24,93,0.82))",
+                  background: "rgba(251,113,133,0.08)",
+                  border: "1px solid rgba(251,113,133,0.18)",
+                  color: "#fb7185",
                 }}
               >
-                {processingMissedAction ? "Working..." : "Delete Task"}
+                {processingMissedAction ? "Working…" : "Delete Task"}
               </button>
             </div>
           </div>
@@ -435,61 +453,12 @@ export function FocusTimer({
   );
 }
 
-export function StatusBadge({ status }) {
-  const m = {
-    pending: { color: "#f59e0b", label: "Pending" },
-    active: { color: "#10b981", label: "In Progress" },
-    completed: { color: "#10b981", label: "Done" },
-    missed: { color: "#ef4444", label: "Missed" },
-    rescheduled: { color: "#a855f7", label: "Moved" },
-  };
-
-  const s = m[status] || m.pending;
-
-  return (
-    <span
-      className="px-2.5 py-1 rounded-full text-[10px] font-semibold"
-      style={{
-        background: `${s.color}14`,
-        color: s.color,
-      }}
-    >
-      {s.label}
-    </span>
-  );
-}
-
-export function PriorityDot({ priority }) {
-  const c = { high: "#ef4444", medium: "#f59e0b", low: "#10b981" };
-  return (
-    <div
-      className="w-2 h-2 rounded-full flex-shrink-0"
-      style={{ background: c[priority] || c.medium }}
-    />
-  );
-}
+// ─── Timeline ────────────────────────────────────────────────────────────────
 
 const TIME_SLOTS = [
-  "5 AM",
-  "6 AM",
-  "7 AM",
-  "8 AM",
-  "9 AM",
-  "10 AM",
-  "11 AM",
-  "12 PM",
-  "1 PM",
-  "2 PM",
-  "3 PM",
-  "4 PM",
-  "5 PM",
-  "6 PM",
-  "7 PM",
-  "8 PM",
-  "9 PM",
-  "10 PM",
-  "11 PM",
-  "12 AM",
+  "5 AM","6 AM","7 AM","8 AM","9 AM","10 AM","11 AM","12 PM",
+  "1 PM","2 PM","3 PM","4 PM","5 PM","6 PM","7 PM","8 PM",
+  "9 PM","10 PM","11 PM","12 AM",
 ];
 
 export function Timeline({ tasks }) {
@@ -505,73 +474,71 @@ export function Timeline({ tasks }) {
   const tasksByHour = {};
   tasks.forEach((task) => {
     const hour = parsePlannedStartHour(task);
-    if (hour >= 0) {
-      tasksByHour[hour] = task;
-    }
+    if (hour >= 0) tasksByHour[hour] = task;
   });
+
+  const statusColor = {
+    active:      "#22d3ee",
+    completed:   "#34d399",
+    missed:      "#fb7185",
+    rescheduled: "#a78bfa",
+    pending:     "#f59e0b",
+  };
 
   return (
     <div className="space-y-0">
       {TIME_SLOTS.map((slotLabel) => {
         const hourMatch = slotLabel.match(/^(\d+)/);
         let hour = hourMatch ? parseInt(hourMatch[1], 10) : -1;
-
         if (slotLabel.includes("PM") && hour !== 12) hour += 12;
         if (slotLabel.includes("AM") && hour === 12) hour = 0;
 
         const isCurrent = hour === currentHour;
-        const task = tasksByHour[hour];
         const isPast = hour < currentHour;
+        const task = tasksByHour[hour];
+        const dotColor = isCurrent
+          ? "#22d3ee"
+          : task
+          ? statusColor[task.status] || "#f59e0b"
+          : "rgba(255,255,255,0.08)";
 
         return (
           <div
             key={slotLabel}
             className="flex gap-4 group"
-            style={{ opacity: isPast && !task ? 0.42 : 1 }}
+            style={{ opacity: isPast && !task ? 0.35 : 1 }}
           >
+            {/* Time label */}
             <div className="w-12 text-right pt-3 flex-shrink-0">
               <span
                 className="text-[11px] font-medium"
-                style={{
-                  color: isCurrent ? "var(--accent)" : "var(--text-muted)",
-                }}
+                style={{ color: isCurrent ? "#22d3ee" : "#475569" }}
               >
                 {slotLabel.split(" ")[0]}
               </span>
-              <span
-                className="text-[9px] ml-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
+              <span className="text-[9px] ml-0.5 text-slate-600">
                 {slotLabel.includes("AM") ? "am" : "pm"}
               </span>
             </div>
 
+            {/* Dot + line */}
             <div className="flex flex-col items-center pt-3.5 flex-shrink-0">
               <div
-                className="w-2.5 h-2.5 rounded-full transition-all flex-shrink-0"
+                className="w-2 h-2 rounded-full flex-shrink-0 transition-all"
                 style={{
-                  background: isCurrent
-                    ? "var(--accent)"
-                    : task
-                    ? task.status === "completed"
-                      ? "#10b981"
-                      : task.status === "active"
-                      ? "#818cf8"
-                      : task.status === "missed"
-                      ? "#ef4444"
-                      : "#f59e0b"
-                    : "var(--border)",
+                  background: dotColor,
                   boxShadow: isCurrent
-                    ? "0 0 0 4px rgba(99,102,241,0.15)"
+                    ? "0 0 0 4px rgba(34,211,238,0.15)"
                     : "none",
                 }}
               />
               <div
                 className="w-px flex-1 mt-1.5"
-                style={{ background: "var(--border)", opacity: 0.45 }}
+                style={{ background: "rgba(255,255,255,0.05)" }}
               />
             </div>
 
+            {/* Task block */}
             <div className="flex-1 pb-3 pt-1.5">
               {task ? (
                 <div
@@ -579,67 +546,48 @@ export function Timeline({ tasks }) {
                   style={{
                     background:
                       task.status === "active"
-                        ? "rgba(99,102,241,0.08)"
+                        ? "rgba(34,211,238,0.06)"
                         : task.status === "completed"
-                        ? "rgba(16,185,129,0.08)"
+                        ? "rgba(52,211,153,0.06)"
                         : task.status === "missed"
-                        ? "rgba(239,68,68,0.08)"
+                        ? "rgba(251,113,133,0.06)"
                         : "rgba(255,255,255,0.02)",
                     border: `1px solid ${
                       task.status === "active"
-                        ? "rgba(99,102,241,0.16)"
+                        ? "rgba(34,211,238,0.15)"
                         : task.status === "completed"
-                        ? "rgba(16,185,129,0.18)"
+                        ? "rgba(52,211,153,0.14)"
                         : task.status === "missed"
-                        ? "rgba(239,68,68,0.18)"
+                        ? "rgba(251,113,133,0.15)"
                         : "rgba(255,255,255,0.04)"
                     }`,
                   }}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span
-                      className="text-sm font-semibold truncate"
+                      className="text-sm font-medium truncate text-white"
                       style={{
-                        color:
-                          task.status === "completed"
-                            ? "#10b981"
-                            : task.status === "missed"
-                            ? "#ef4444"
-                            : "var(--text-primary)",
-                        textDecoration: "none",
-                        opacity: task.status === "completed" ? 0.85 : 1,
+                        opacity: task.status === "completed" ? 0.6 : 1,
                       }}
                     >
                       {task.subject}
                     </span>
-
                     <StatusBadge status={task.status} />
                   </div>
-
-                  <span
-                    className="text-[10px] mt-1.5 block"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {task.scheduled_slot || `${task.duration_minutes} min`}
-                  </span>
-
-                  <span
-                    className="text-[10px] mt-1 block"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {task.duration_minutes} min
-                    {task.distraction_events > 0 &&
-                      ` · ${task.distraction_events} distractions`}
-                  </span>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <span className="text-[11px] text-slate-500">
+                      {task.scheduled_slot || `${task.duration_minutes} min`}
+                    </span>
+                    {task.distraction_events > 0 && (
+                      <span className="text-[11px] text-slate-600">
+                        · {task.distraction_events} distractions
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : (
-                <div className="h-9 opacity-0 group-hover:opacity-100 transition-opacity flex items-center px-3">
-                  <span
-                    className="text-[10px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    Open slot
-                  </span>
+                <div className="h-8 opacity-0 group-hover:opacity-100 transition-opacity flex items-center px-2">
+                  <span className="text-[10px] text-slate-700">Open slot</span>
                 </div>
               )}
             </div>

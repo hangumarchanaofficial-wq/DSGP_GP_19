@@ -394,8 +394,13 @@ def create_app(agent):
             # Also accept latest content state stored on agent (set by browser extension)
             if content_state is None:
                 content_state = getattr(agent, 'latest_content_state', None)
+            active_task = planner.task_manager.get_active_task()
+            if active_task is None:
+                pending_tasks = planner.task_manager.get_pending_tasks()
+                active_task = pending_tasks[0] if pending_tasks else None
             result = planner.predict(
                 data,
+                task=active_task,
                 distraction_state=distraction_state,
                 content_state=content_state,
             )
