@@ -225,25 +225,25 @@ export function FocusTimer({
   return (
     <>
       {/* ── Break Timer Card ── */}
-      <Surface className="p-6 flex flex-col h-full gap-5">
+      <Surface className="w-full p-5 md:p-6 lg:p-7 flex flex-col h-full gap-4 md:gap-5 rounded-[30px]">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <SectionLabel>Break Timer</SectionLabel>
-            <h3 className="mt-1 font-serif text-[1.1rem] text-white">
+            <h3 className="mt-1 font-serif text-[1rem] md:text-[1.08rem] text-white tracking-tight">
               Take a Breather
             </h3>
           </div>
           <span
-            className="px-3 py-1 rounded-full text-[10px] font-semibold tracking-wide"
+            className="px-3 py-1 rounded-full text-[10px] font-semibold tracking-[0.08em]"
             style={{
               background: shortBreakActive
                 ? "rgba(52,211,153,0.12)"
-                : "rgba(255,255,255,0.04)",
-              color: shortBreakActive ? "#34d399" : "#64748b",
+                : "rgba(255,255,255,0.035)",
+              color: shortBreakActive ? "#34d399" : "#7c8aa5",
               border: shortBreakActive
                 ? "1px solid rgba(52,211,153,0.25)"
-                : "1px solid rgba(255,255,255,0.06)",
+                : "1px solid rgba(148,163,184,0.10)",
             }}
           >
             {shortBreakActive ? "Running" : "Paused"}
@@ -251,7 +251,7 @@ export function FocusTimer({
         </div>
 
         {/* Duration Selector */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-2.5">
           {breakOptions.map((m) => {
             const selected = breakMinutesInput === m;
             return (
@@ -262,18 +262,18 @@ export function FocusTimer({
                   onBreakMinutesChange(m)
                 }
                 disabled={shortBreakActive}
-                className="py-2.5 rounded-2xl text-xs font-semibold transition-all"
+                className="py-2.5 rounded-[18px] text-xs font-semibold transition-all"
                 style={{
                   background: selected
                     ? "linear-gradient(135deg,#22d3ee,#8b5cf6)"
-                    : "rgba(255,255,255,0.03)",
-                  color: selected ? "#fff" : "#64748b",
+                    : "rgba(255,255,255,0.025)",
+                  color: selected ? "#fff" : "#7c8aa5",
                   border: selected
                     ? "1px solid transparent"
-                    : "1px solid rgba(255,255,255,0.06)",
+                    : "1px solid rgba(148,163,184,0.10)",
                   opacity: shortBreakActive && !selected ? 0.35 : 1,
                   boxShadow: selected
-                    ? "0 4px 14px rgba(34,211,238,0.2)"
+                    ? "0 10px 24px rgba(34,211,238,0.20)"
                     : "none",
                 }}
               >
@@ -285,16 +285,17 @@ export function FocusTimer({
 
         {/* Countdown */}
         <div
-          className="flex-1 flex flex-col items-center justify-center rounded-[20px] py-7"
+          className="flex flex-col items-center justify-center rounded-[24px] py-12 md:py-14 px-5 md:px-6 min-h-[420px]"
           style={{
-            background: "rgba(6,11,22,0.6)",
-            border: "1px solid rgba(255,255,255,0.05)",
+            background: "linear-gradient(180deg, rgba(6,11,22,0.82) 0%, rgba(7,12,22,0.62) 100%)",
+            border: "1px solid rgba(148,163,184,0.08)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
           }}
         >
           <span
             className="font-black tabular-nums tracking-tighter"
             style={{
-              fontSize: "3.5rem",
+              fontSize: "clamp(3.2rem, 5vw, 4.3rem)",
               lineHeight: 1,
               color: shortBreakActive ? "#34d399" : "#fff",
               textShadow: shortBreakActive
@@ -313,7 +314,7 @@ export function FocusTimer({
             </span>
             {String(secs).padStart(2, "0")}
           </span>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-[11px] text-slate-500">
             {shortBreakActive
               ? "Silence mode engaged."
               : "Select a duration, then start."}
@@ -322,8 +323,8 @@ export function FocusTimer({
 
         {/* Progress bar */}
         <div
-          className="w-full h-1 rounded-full overflow-hidden"
-          style={{ background: "rgba(255,255,255,0.05)" }}
+          className="w-full h-1.5 rounded-full overflow-hidden"
+          style={{ background: "rgba(148,163,184,0.10)" }}
         >
           <div
             className="h-full rounded-full transition-all duration-1000"
@@ -341,7 +342,7 @@ export function FocusTimer({
         {shortBreakActive ? (
           <button
             onClick={onEndBreak}
-            className="w-full py-3 rounded-2xl text-sm font-semibold transition-all"
+            className="w-full py-3 rounded-[18px] text-sm font-semibold transition-all"
             style={{
               background: "rgba(251,113,133,0.1)",
               border: "1px solid rgba(251,113,133,0.3)",
@@ -353,10 +354,10 @@ export function FocusTimer({
         ) : (
           <button
             onClick={onStartBreak}
-            className="w-full py-3 rounded-2xl text-sm font-semibold text-white transition-all"
+            className="w-full py-3 rounded-[18px] text-sm font-semibold text-white transition-all"
             style={{
               background: "linear-gradient(135deg,#22d3ee,#8b5cf6)",
-              boxShadow: "0 4px 16px rgba(34,211,238,0.2)",
+              boxShadow: "0 10px 24px rgba(34,211,238,0.22)",
             }}
           >
             Start Break

@@ -48,6 +48,11 @@ export default function Planner() {
   );
   const lastStartReminderNotificationRef = useRef(null);
   const lastRescheduleNotificationRef = useRef(null);
+  // Smart suggestion cooldown: prevent repetitive distraction messages.
+  // A new suggestion is shown only when the distraction probability changes
+  // by more than ±15% OR at least 20 minutes have elapsed since the last one.
+  const lastSuggestionTimeRef = useRef(0);
+  const lastSuggestionProbRef = useRef(null);
   const [activeTaskRemainingAtStart, setActiveTaskRemainingAtStart] = useState(0);
   const [activeTaskSessionStartedAt, setActiveTaskSessionStartedAt] = useState(null);
   const [socialSeconds, setSocialSeconds] = useState(0);
@@ -302,7 +307,11 @@ export default function Planner() {
           }),
         });
     
-        await res.json();
+        const data = await res.json();
+
+        // The backend now records actual_duration_seconds on the completed task.
+        // The study_hours_per_day slider auto-syncs from todayStudySeconds (via
+        // fetchTasks → persistedTodayStudySeconds), so no manual update is needed here.
     
         setActiveTaskId(null);
         setTimeLeft(0);
@@ -1029,7 +1038,7 @@ export default function Planner() {
 
     if (predictionInFlightRef.current) return;
 
-    // ── Zero-input short-circuit ───────────────────────────────
+    // â”€â”€ Zero-input short-circuit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // When all activity values are zero (no manual data entered,
     // no live data tracked), skip the API call and show 0%.
     const activeForm = latestFormRef.current || form;
@@ -1057,7 +1066,7 @@ export default function Planner() {
       setResult(zeroResult);
       return;
     }
-    // ── End zero-input short-circuit ───────────────────────────
+    // â”€â”€ End zero-input short-circuit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     predictionInFlightRef.current = true;
     setError(null);
@@ -1081,8 +1090,36 @@ export default function Planner() {
         throw new Error("Planner prediction response is missing task_completion_probability");
       }
       latestPredictionRef.current = data;
-      visiblePredictionRef.current = data;
-      setResult(data);
+
+      // ── Smart suggestion cooldown ──────────────────────────────────
+      // Only update the visible suggestion when distraction probability
+      // changes by >15% OR it has been >20 minutes since the last update.
+      const newProb = typeof data.task_completion_probability === "number"
+        ? data.task_completion_probability
+        : 0;
+      const lastProb = lastSuggestionProbRef.current;
+      const now = Date.now();
+      const msSinceLastSuggestion = now - lastSuggestionTimeRef.current;
+      const COOLDOWN_MS = 20 * 60 * 1000; // 20 minutes
+      const PROB_CHANGE_THRESHOLD = 0.15;  // 15% swing
+
+      const probChanged = lastProb === null
+        || Math.abs(newProb - lastProb) >= PROB_CHANGE_THRESHOLD;
+      const cooldownExpired = msSinceLastSuggestion >= COOLDOWN_MS;
+
+      if (probChanged || cooldownExpired) {
+        visiblePredictionRef.current = data;
+        setResult(data);
+        lastSuggestionProbRef.current = newProb;
+        lastSuggestionTimeRef.current = now;
+      }
+      // Always persist the latest raw prediction (used for ring/badge updates)
+      setResult((prev) => ({
+        ...prev,
+        task_completion_probability: data.task_completion_probability,
+        prediction: data.prediction,
+        confidence_tier: data.confidence_tier,
+      }));
       if (data.task_stats) setTaskStats(data.task_stats);
       if (data.streak_info) setStreakInfo(data.streak_info);
     } catch (err) {
@@ -1221,18 +1258,29 @@ export default function Planner() {
     return () => clearInterval(id);
   }, [handlePredict]);
 
-  // Applies the newest prediction payload to the visible score card on its own cadence.
+  // Applies the newest prediction numeric values (ring, badge) on its own cadence,
+  // but does NOT overwrite the visible feedback/suggestion while the cooldown is active.
   useEffect(() => {
     const id = setInterval(() => {
       if (!canShowPrediction) return;
       if (!latestPredictionRef.current) return;
       if (latestPredictionRef.current === visiblePredictionRef.current) return;
-      visiblePredictionRef.current = latestPredictionRef.current;
-      setResult(latestPredictionRef.current);
+      const latest = latestPredictionRef.current;
+      // Only propagate probability-ring updates; leave feedback text to cooldown logic.
+      setResult((prev) => {
+        if (!prev) return latest;
+        return {
+          ...prev,
+          task_completion_probability: latest.task_completion_probability,
+          prediction: latest.prediction,
+          confidence_tier: latest.confidence_tier,
+        };
+      });
     }, 4000);
 
     return () => clearInterval(id);
   }, [canShowPrediction]);
+
 
   return (
     <div className="flex min-h-screen bg-[#040816] text-white">
@@ -1785,7 +1833,7 @@ export default function Planner() {
                                 onClick={() => {
                                   if (activeTaskId === activeTask.id && isRunning) {
                                     showPlannerNotice(
-                                      "Task can’t be removed yet",
+                                      "Task canâ€™t be removed yet",
                                       "Pause the running session first, then remove it from your queue.",
                                     );
                                     return;
@@ -2268,7 +2316,7 @@ export default function Planner() {
                               border: "1px solid rgba(251,113,133,0.25)",
                             }}
                           >
-                            manual · reset
+                            manual Â· reset
                           </button>
                         ) : (
                           <span
@@ -2308,8 +2356,8 @@ export default function Planner() {
             </div>
           </section>
 
-          <div className="grid grid-cols-12 gap-6">
-            <div className="col-span-12 lg:col-span-3 space-y-6">
+          <div className="grid grid-cols-12 gap-5 xl:gap-6 items-stretch">
+            <div className="col-span-12 lg:col-span-5 xl:col-span-4 space-y-6 h-full">
               <FocusTimer
                 onTasksChanged={fetchTasks}
                 onStartTask={handleStartTimer}
@@ -2324,49 +2372,45 @@ export default function Planner() {
 
             </div>
 
-            <div className="col-span-12 lg:col-span-5 space-y-6">
-              <section className="glass-card h-full p-6 flex flex-col">
-                <div className="mb-5">
-                  <p
-                    className="text-[10px] uppercase tracking-[0.24em] font-semibold mb-1"
-                    style={{ color: "var(--text-muted)" }}
-                  >
+            <div className="col-span-12 lg:col-span-7 xl:col-span-8 space-y-6 h-full">
+              <section
+                className="h-full p-5 md:p-6 flex flex-col rounded-[30px]"
+                style={{
+                  background: "linear-gradient(160deg, rgba(11,17,31,0.98) 0%, rgba(7,11,20,0.99) 100%)",
+                  border: "1px solid rgba(148,163,184,0.10)",
+                  boxShadow: "0 30px 60px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.04)",
+                }}
+              >
+                <div className="mb-4 md:mb-5">
+                  <p className="text-[10px] uppercase tracking-[0.28em] font-bold mb-1" style={{ color: "#475569" }}>
                     Planner Inputs
                   </p>
-                  <h2
-                    className="text-sm font-bold"
-                    style={{ color: "var(--text-primary)" }}
-                  >
+                  <h2 className="text-[15px] md:text-base font-black tracking-tight" style={{ color: "#f8fafc" }}>
                     Model Inputs
                   </h2>
                 </div>
 
                 <div
-                  className="mb-5 p-5 rounded-[24px] planner-subtle"
-                  style={{ border: "1px solid var(--border)" }}
+                  className="mb-2 p-4 md:p-5 rounded-[26px] max-w-[960px]"
+                  style={{
+                    background: "linear-gradient(180deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0.015) 100%)",
+                    border: "1px solid rgba(148,163,184,0.10)",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03), 0 10px 28px rgba(0,0,0,0.18)",
+                  }}
                 >
                   <div className="mb-4">
-                    <p
-                      className="text-[10px] uppercase tracking-[0.22em] font-semibold mb-1"
-                      style={{ color: "var(--text-muted)" }}
-                    >
+                    <p className="text-[10px] uppercase tracking-[0.22em] font-bold mb-1" style={{ color: "#475569" }}>
                       Model Inputs
                     </p>
-                    <h3
-                      className="text-sm font-bold"
-                      style={{ color: "var(--text-primary)" }}
-                    >
+                    <h3 className="text-sm font-black tracking-tight mb-1" style={{ color: "#f1f5f9" }}>
                       Profile and study signals for the planner model
                     </h3>
-                    <p
-                      className="text-[11px] mt-2 leading-relaxed"
-                      style={{ color: "var(--text-secondary)" }}
-                    >
+                    <p className="text-[11px] leading-relaxed max-w-[52ch]" style={{ color: "#475569" }}>
                       Keep these values realistic so the prediction reflects your actual study day.
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-[180px,1fr] gap-4 mb-4">
+                  <div className="grid grid-cols-1 xl:grid-cols-[160px,1fr] gap-3 md:gap-4 mb-4">
                     <div>
                       <label
                         className="text-[10px] uppercase tracking-[0.18em] font-bold block mb-2"
@@ -2380,16 +2424,17 @@ export default function Planner() {
                         max={80}
                         value={form.age}
                         onChange={(e) => update("age", Math.min(80, Math.max(10, Number(e.target.value || 0))))}
-                        className="w-full px-4 py-3 rounded-2xl text-sm font-semibold outline-none transition-all"
+                        className="w-full px-4 py-3 rounded-[20px] text-sm font-semibold outline-none transition-all"
                         style={{
-                          background: "rgba(6,10,18,0.9)",
-                          color: "var(--text-primary)",
-                          border: "1px solid var(--border)",
+                          background: "rgba(5,10,20,0.92)",
+                          color: "#f8fafc",
+                          border: "1px solid rgba(148,163,184,0.10)",
+                          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
                         }}
                       />
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label
                           className="text-[10px] uppercase tracking-[0.18em] font-bold block mb-2"
@@ -2403,17 +2448,17 @@ export default function Planner() {
                               key={option}
                               type="button"
                               onClick={() => update("gender", option)}
-                              className="px-4 py-3 rounded-2xl text-xs font-semibold transition-all"
+                              className="px-3.5 py-3 rounded-[18px] text-xs font-semibold transition-all"
                               style={{
                                 background:
                                   form.gender === option
                                     ? "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(99,102,241,0.74))"
-                                    : "rgba(10,16,30,0.9)",
+                                    : "rgba(10,16,30,0.72)",
                                 color: form.gender === option ? "#fff" : "#cbd5f5",
-                                border: form.gender === option ? "none" : "1px solid var(--border)",
+                                border: form.gender === option ? "none" : "1px solid rgba(148,163,184,0.10)",
                                 boxShadow:
                                   form.gender === option
-                                    ? "0 12px 24px rgba(99,102,241,0.2)"
+                                    ? "0 10px 24px rgba(99,102,241,0.24)"
                                     : "none",
                               }}
                             >
@@ -2436,17 +2481,17 @@ export default function Planner() {
                               key={option}
                               type="button"
                               onClick={() => update("part_time_job", option)}
-                              className="px-4 py-3 rounded-2xl text-xs font-semibold transition-all"
+                              className="px-3.5 py-3 rounded-[18px] text-xs font-semibold transition-all"
                               style={{
                                 background:
                                   form.part_time_job === option
                                     ? "linear-gradient(135deg, rgba(16,185,129,0.95), rgba(5,150,105,0.76))"
-                                    : "rgba(10,16,30,0.9)",
+                                    : "rgba(10,16,30,0.72)",
                                 color: form.part_time_job === option ? "#fff" : "#cbd5f5",
-                                border: form.part_time_job === option ? "none" : "1px solid var(--border)",
+                                border: form.part_time_job === option ? "none" : "1px solid rgba(148,163,184,0.10)",
                                 boxShadow:
                                   form.part_time_job === option
-                                    ? "0 12px 24px rgba(16,185,129,0.16)"
+                                    ? "0 10px 24px rgba(16,185,129,0.18)"
                                     : "none",
                               }}
                             >
@@ -2458,7 +2503,7 @@ export default function Planner() {
                     </div>
                   </div>
 
-                  <div className="space-y-5">
+                  <div className="space-y-4">
                     {[
                       {
                         key: "study_hours_per_day",
@@ -2497,49 +2542,58 @@ export default function Planner() {
                         : Number((dailySleepMinutes / 60).toFixed(2));
 
                       return (
-                        <div key={key}>
+                        <div
+                          key={key}
+                          className="rounded-[20px] px-3 py-3"
+                          style={{
+                            background: "rgba(255,255,255,0.015)",
+                            border: "1px solid rgba(148,163,184,0.08)",
+                          }}
+                        >
                           <div className="flex items-center justify-between gap-3 mb-2">
                             <div>
-                              <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                              <p className="text-[13px] font-semibold" style={{ color: "#f8fafc" }}>
                                 {label}
                               </p>
-                              <p className="text-[10px]" style={{ color: "var(--text-muted)" }}>
+                              <p className="text-[10px]" style={{ color: "#475569" }}>
                                 {helper}
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
-                              {isManual ? (
-                                <button
-                                  onClick={() => {
-                                    userEditedFields.current.delete(key);
-                                    setManualFieldsVersion((v) => v + 1);
-                                    setForm((f) => ({ ...f, [key]: liveVal }));
-                                  }}
-                                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full transition-all"
-                                  style={{
-                                    background: "rgba(251,113,133,0.12)",
-                                    color: "#fb7185",
-                                    border: "1px solid rgba(251,113,133,0.25)",
-                                  }}
-                                >
-                                  manual reset
-                                </button>
-                              ) : (
-                                <span
-                                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
-                                  style={{
-                                    background: "rgba(52,211,153,0.1)",
-                                    color: "#34d399",
-                                    border: "1px solid rgba(52,211,153,0.2)",
-                                  }}
-                                >
-                                  live
-                                </span>
-                              )}
-                              <span className="text-sm font-black tracking-tight" style={{ color }}>
+                              <span className="text-base font-black tracking-tight" style={{ color }}>
                                 {form[key]}h
                               </span>
                             </div>
+                          </div>
+                          <div className="mb-2 flex items-center justify-between px-1">
+                            {Array.from({ length: 5 }).map((_, idx) => {
+                              const stopValue = min + ((max - min) / 4) * idx;
+                              const active = form[key] >= stopValue;
+                              return (
+                                <div
+                                  key={`${key}-tick-${idx}`}
+                                  className="flex flex-col items-center gap-1"
+                                  style={{ width: "20%" }}
+                                >
+                                  <div
+                                    className="h-1 rounded-full transition-all"
+                                    style={{
+                                      width: idx === 0 || idx === 4 ? 18 : 28,
+                                      background: active ? color : "rgba(148,163,184,0.18)",
+                                      boxShadow: active ? `0 0 10px ${color}33` : "none",
+                                    }}
+                                  />
+                                  <span
+                                    className="text-[9px] font-medium tabular-nums"
+                                    style={{
+                                      color: active ? "#94a3b8" : "#475569",
+                                    }}
+                                  >
+                                    {`${Number(stopValue.toFixed(1))}h`}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                           <input
                             type="range"
@@ -2593,7 +2647,7 @@ export default function Planner() {
         : task.status === "missed"
         ? "rgba(127,29,29,0.45)"
         : task.status === "rescheduled"
-        ? "rgba(59,130,246,0.15)"  // 🔵 BLUE
+        ? "rgba(59,130,246,0.15)"  // ðŸ”µ BLUE
         : "var(--bg-card)",
   
     border:
@@ -2606,7 +2660,7 @@ export default function Planner() {
         : task.status === "missed"
         ? "1px solid rgba(239,68,68,0.45)"
         : task.status === "rescheduled"
-        ? "1px solid rgba(59,130,246,0.5)" // 🔵
+        ? "1px solid rgba(59,130,246,0.5)" // ðŸ”µ
         : "1px solid transparent",
     boxShadow:
       activeTaskId === task.id && isRunning
@@ -2699,7 +2753,7 @@ export default function Planner() {
         border: "1px solid rgba(236,253,245,0.3)",
       }}
     >
-      ⏱ {formatTime(timeLeft)}
+      â± {formatTime(timeLeft)}
     </span>
 
     {isRunning ? (
@@ -2763,7 +2817,7 @@ export default function Planner() {
   onClick={() => {
     if (activeTaskId === task.id && isRunning) {
       showPlannerNotice(
-        "Task can’t be removed yet",
+        "Task canâ€™t be removed yet",
         "Pause the running session first, then remove it from your queue.",
       );
       return;
@@ -2790,37 +2844,6 @@ export default function Planner() {
                 </div>
                 )}
 
-                {taskStats && taskStats.total > 0 && (
-                  <div
-                    className="mt-6 pt-5"
-                    style={{ borderTop: "1px solid var(--border)" }}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <span
-                        className="text-xs font-bold uppercase tracking-wider"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        {taskStats.completed} of {taskStats.total} complete
-                      </span>
-                      <span
-                        className="text-sm font-black"
-                        style={{ color: "var(--text-primary)" }}
-                      >
-                        {taskStats.completion_rate}%
-                      </span>
-                    </div>
-                    <div className="relative w-full h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.05)", boxShadow: "inner 0 1px 3px rgba(0,0,0,0.3)" }}>
-                      <div
-                        className="absolute top-0 left-0 h-full rounded-full transition-all duration-700 pointer-events-none"
-                        style={{
-                          width: `${taskStats.completion_rate}%`,
-                          background: "linear-gradient(to right, #8b5cf6, #3b82f6)",
-                          boxShadow: "0 0 12px rgba(139,92,246,0.6)"
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
               </section>
             </div>
 
@@ -2881,7 +2904,7 @@ export default function Planner() {
                           result.task_completion_probability && (
                           <span style={{ opacity: 0.6 }}>
                             {" "}
-                            · base{" "}
+                            Â· base{" "}
                             {(result.original_probability * 100).toFixed(1)}%
                           </span>
                         )}
@@ -3138,10 +3161,10 @@ export default function Planner() {
                     {[
                       { label: "Tasks in queue", value: tasks.length },
                       { label: "Active now", value: activeCount },
-                      { label: "Current streak", value: currentStreak || "—" },
+                      { label: "Current streak", value: currentStreak || "â€”" },
                       {
                         label: "Focus rate",
-                        value: focusRate != null ? `${focusRate}%` : "—",
+                        value: focusRate != null ? `${focusRate}%` : "â€”",
                       },
                     ].map(({ label, value }) => (
                       <div
@@ -3358,7 +3381,7 @@ export default function Planner() {
               <span className="text-[10px] font-semibold">Start Reminder</span>
             </div>
             <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-              It’s time to start "{startReminderTask.subject}"
+              Itâ€™s time to start "{startReminderTask.subject}"
             </p>
             <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
               Scheduled at {startReminderTask.scheduled_slot || "planned time"}

@@ -952,20 +952,20 @@ export default function Dashboard() {
   const weeklyPattern = useMemo(() => {
     const trends = analytics?.daily_trends;
     if (trends?.length) {
-      return trends.map(d => ({
-        day: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
-        hours: Number((((d.study_minutes ?? 0) / 60)).toFixed(1)),
-      }));
+      // Only include days with actual study minutes > 0
+      const withData = trends
+        .map(d => ({
+          day: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
+          hours: Number(((d.study_minutes ?? 0) / 60).toFixed(2)),
+          hasData: (d.tasks_completed ?? 0) > 0 || (d.study_minutes ?? 0) > 0,
+        }))
+        .filter(d => d.hasData);
+      return withData;
     }
-    return [
-      { day: "Mon", hours: 0 }, { day: "Tue", hours: 0 },
-      { day: "Wed", hours: 0 }, { day: "Thu", hours: 0 },
-      { day: "Fri", hours: 0 }, { day: "Sat", hours: 0 },
-      { day: "Sun", hours: 0 },
-    ];
+    return [];
   }, [analytics]);
 
-  // ── real suggestions from analytics (or static fallback) ─────────
+  // ── smart suggestions: dedup + cooldown ─────────────────────────
   const suggestions = useMemo(() => {
     if (isWarmup) {
       return [
@@ -978,10 +978,27 @@ export default function Dashboard() {
     }
     const raw = analytics?.suggestions;
     if (raw?.length) {
-      return raw.map(s => ({ title: s.title, message: s.message, type: s.type }));
+      // Deduplicate by type — only keep the highest priority suggestion per type
+      const seen = new Set();
+      const deduped = [];
+      for (const s of raw) {
+        if (!seen.has(s.type)) {
+          seen.add(s.type);
+          deduped.push({ title: s.title, message: s.message, type: s.type });
+        }
+      }
+      // Limit to 3 suggestions max so the panel stays clean
+      return deduped.slice(0, 3);
     }
-    return STATIC_SUGGESTIONS;
-  }, [analytics, isWarmup, warmupLabel]);
+    // No analytics data yet but not warmup — show minimal placeholder
+    const hasAnyTasks = tasks.some(t => t.status === "completed");
+    if (!hasAnyTasks) {
+      return [
+        { title: "Complete your first task", message: "Finish a study task to unlock personalized suggestions.", type: "onboarding" },
+      ];
+    }
+    return [];
+  }, [analytics, isWarmup, warmupLabel, tasks]);
 
   // ── study goal from analytics weekly_summary ─────────────────────
   const goalMinutes = 180;
@@ -1139,7 +1156,7 @@ export default function Dashboard() {
 
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <UsageInsights usageData={usageData} mostUsedApp={isDashboardEmpty ? "No app yet" : mostUsedApp} isEmpty={isDashboardEmpty} />
-            <WeeklyPattern data={weeklyPattern} isEmpty={isDashboardEmpty} />
+            <WeeklyPattern data={weeklyPattern} isEmpty={weeklyPattern.length === 0} />
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">

@@ -1,8 +1,8 @@
 {
-  "focus_streak": 4,
-  "best_streak": 112,
-  "total_focused_sessions": 493,
-  "total_sessions": 1012,
+  "focus_streak": 170,
+  "best_streak": 170,
+  "total_focused_sessions": 941,
+  "total_sessions": 1548,
   "badges": [
     {
       "id": "first_focus",
@@ -52,6 +52,13 @@
       "description": "50 total focused sessions",
       "icon": "shield",
       "earned_at": "2026-03-21 16:06:55"
+    },
+    {
+      "id": "tasks_5",
+      "name": "Task Crusher",
+      "description": "Completed 5 tasks",
+      "icon": "check-circle",
+      "earned_at": "2026-04-05 00:29:01"
     }
   ]
 }

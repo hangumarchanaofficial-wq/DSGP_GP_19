@@ -106,5 +106,14 @@
     "content_educational": 0,
     "content_non_educational": 0,
     "distraction_minutes": 20
+  },
+  "2026-04-05": {
+    "study_minutes": 120,
+    "distraction_events": 0,
+    "tasks_completed": 2,
+    "tasks_missed": 0,
+    "content_educational": 0,
+    "content_non_educational": 0,
+    "distraction_minutes": 0
   }
 }

@@ -298,7 +298,12 @@ class TrendAnalyzer:
     def record_task_completed(self, task: dict):
         entry = self._get_day(self._today())
         entry['tasks_completed'] += 1
-        entry['study_minutes'] += int(task.get('duration_minutes') or 0)
+        # Use actual studied seconds if available, else fall back to duration_minutes.
+        studied_sec = int(task.get('actual_duration_seconds') or task.get('studied_seconds') or 0)
+        if studied_sec > 0:
+            entry['study_minutes'] += round(studied_sec / 60, 2)
+        else:
+            entry['study_minutes'] += int(task.get('duration_minutes') or 0)
         entry['distraction_events'] += int(task.get('distraction_events') or 0)
         self._save()
 
@@ -605,6 +610,18 @@ class TaskManager:
             print('[TaskManager] No saved tasks found, starting fresh')
 
     def _save_history(self):
+        """Save history, pruning records older than 7 days."""
+        cutoff = datetime.now() - timedelta(days=7)
+        pruned = []
+        for t in self.history:
+            ts_str = t.get('completed_at') or t.get('started_at') or t.get('created_at')
+            try:
+                ts = datetime.strptime(str(ts_str)[:19], '%Y-%m-%d %H:%M:%S')
+                if ts >= cutoff:
+                    pruned.append(t)
+            except Exception:
+                pruned.append(t)  # keep records with unparseable dates
+        self.history = pruned
         try:
             with open(self.history_file, 'w') as f:
                 json.dump(self.history, f, indent=2)
@@ -831,9 +848,23 @@ class TaskManager:
         if studied:
             task['studied_seconds'] = max(int(task.get('studied_seconds') or 0), 0) + studied
         task['status'] = 'completed'
-        task['completed_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        task['completed_at'] = now_str
         task['remaining_seconds'] = 0
         task['session_started_at'] = None
+        # Record actual start time (when user clicked Start) and compute actual duration
+        if not task.get('actual_started_at'):
+            task['actual_started_at'] = task.get('started_at') or now_str
+        task['actual_completed_at'] = now_str
+        try:
+            t_start = datetime.strptime(task['actual_started_at'][:19], '%Y-%m-%d %H:%M:%S')
+            t_end = datetime.strptime(task['actual_completed_at'][:19], '%Y-%m-%d %H:%M:%S')
+            wall_clock_seconds = max(0, int((t_end - t_start).total_seconds()))
+        except Exception:
+            wall_clock_seconds = 0
+        # Prefer tracked timer seconds; wall-clock as fallback
+        actual_secs = int(task.get('studied_seconds') or 0) or wall_clock_seconds
+        task['actual_duration_seconds'] = actual_secs
         self.history.append({**task})
         self._save_tasks()
         self._save_history()
@@ -973,6 +1004,11 @@ class AdaptivePlanner:
         self.social_alert_count = 0
         self.distraction_streak = 0
         self.last_distraction_state = None
+
+        # Smart suggestion cooldown: track last probability and timestamp
+        # so we don't fire repeated distraction alerts within 20 minutes.
+        self._last_suggestion_prob = None
+        self._last_suggestion_time = None
 
         self.feedback_messages = {
             'recovery': [

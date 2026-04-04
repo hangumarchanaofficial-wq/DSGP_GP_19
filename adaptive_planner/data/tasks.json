@@ -1,4 +1,28 @@
 {
-  "tasks": {},
-  "next_id": 15
+  "tasks": {
+    "task_19": {
+      "id": "task_19",
+      "subject": "maths",
+      "duration_minutes": 60,
+      "priority": "medium",
+      "scheduled_slot": "01:53 AM - 02:53 AM",
+      "planned_start": "2026-04-05T01:53:00",
+      "planned_end": "2026-04-05T02:53:00",
+      "status": "active",
+      "created_at": "2026-04-05 01:23:40",
+      "started_at": "2026-04-05 01:24:30",
+      "session_started_at": "2026-04-05 01:24:30",
+      "completed_at": null,
+      "rescheduled_from": "1:15 AM - 2:15 AM",
+      "rescheduled_to": "01:53 AM - 02:53 AM",
+      "reschedule_reason": "missed_task_rescheduled",
+      "distraction_events": 134,
+      "focus_score_avg": 0.6129,
+      "focus_score_count": 375,
+      "remaining_seconds": 3600,
+      "studied_seconds": 0,
+      "notes": ""
+    }
+  },
+  "next_id": 21
 }
