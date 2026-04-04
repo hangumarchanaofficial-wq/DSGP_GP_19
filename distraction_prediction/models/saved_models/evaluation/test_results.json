@@ -1,13 +1,13 @@
 {
-  "accuracy": 0.8818,
-  "f1": 0.8976,
-  "auc": 0.9527,
-  "avg_precision": 0.9658,
+  "accuracy": 0.874,
+  "f1": 0.8886,
+  "auc": 0.9477,
+  "avg_precision": 0.9614,
   "confusion_matrix": {
-    "tn": 2336,
-    "fp": 401,
-    "fn": 358,
-    "tp": 3327
+    "tn": 2387,
+    "fp": 350,
+    "fn": 459,
+    "tp": 3226
   },
   "config": {
     "input_size": 24,
