@@ -183,8 +183,7 @@ export default function Login() {
     }}>
 
       {/* ════════════════════════════════════════════════
-          LEFT PANEL — Blue Branding  (42 % width)
-          Slightly wider than Register to fit feature cards
+          
       ════════════════════════════════════════════════ */}
       <div style={{
         position: 'relative',

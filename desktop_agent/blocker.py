@@ -40,6 +40,20 @@ BROWSER_FAMILIES = {
     "arc",
 }
 
+AI_FAMILIES = {
+    "chatgpt",
+    "claude",
+    "copilot",
+    "m365copilot",
+}
+
+EDUCATION_FAMILIES = {
+    "packettracer",
+    "thonny",
+    "java",
+    "javaw",
+}
+
 PRODUCTIVE_FAMILIES = {
     "code",
     "pycharm64",
@@ -74,6 +88,33 @@ SYSTEM_FAMILIES = {
     "lockapp",
     "dllhost",
     "textinputhost",
+}
+
+ENTERTAINMENT_FAMILIES = {
+    "spotify",
+    "vlc",
+    "media player",
+    "syncplay",
+}
+
+GAME_FAMILIES = {
+    "brawlhalla",
+    "brawlhalla.exe",
+    "cs2",
+    "gta5",
+    "gta_sa",
+    "hogwartslegacy",
+    "mtasa-1.6",
+    "robloxplayerbeta",
+    "titanfall2",
+    "valorant-win64-shipping",
+    "eadesktop",
+    "epicgameslauncher",
+    "prismlauncher",
+    "riot client",
+    "riotclientservices",
+    "socialclubhelper",
+    "steamwebhelper",
 }
 
 
@@ -195,25 +236,38 @@ class Blocker:
     def is_browser_app(self, app_name):
         return app_family(app_name) in BROWSER_FAMILIES
 
+    def is_blockable_app(self, app_name):
+        family = app_family(app_name)
+        return family in ENTERTAINMENT_FAMILIES or family in GAME_FAMILIES
+
     def is_protected_app(self, app_name):
         family = app_family(app_name)
-        return family in BROWSER_FAMILIES or family in PRODUCTIVE_FAMILIES or family in SYSTEM_FAMILIES
+        return not self.is_blockable_app(family)
 
     def auto_block_reason(self, app_name):
         family = app_family(app_name)
         if not family:
             return "missing_app"
+        if family in AI_FAMILIES:
+            return "ai_exempt"
+        if family in EDUCATION_FAMILIES:
+            return "education_exempt"
         if family in BROWSER_FAMILIES:
             return "browser_exempt"
         if family in PRODUCTIVE_FAMILIES:
             return "productive_exempt"
         if family in SYSTEM_FAMILIES:
             return "system_exempt"
-        return "eligible"
+        if family in ENTERTAINMENT_FAMILIES or family in GAME_FAMILIES:
+            return "eligible"
+        return "non_entertainment_exempt"
 
     def add_blocked_app(self, app_name):
         app = self._normalize_app_name(app_name)
         if not app:
+            return self.get_blocked_apps()
+        if not self.is_blockable_app(app):
+            print(f"[Blocker] Skipping non-entertainment app: {app}")
             return self.get_blocked_apps()
         if app not in self._custom_blocked_apps:
             self._custom_blocked_apps.append(app)
