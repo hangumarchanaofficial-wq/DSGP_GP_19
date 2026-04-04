@@ -91,11 +91,20 @@
   },
   "2026-04-03": {
     "study_minutes": 60,
-    "distraction_events": 123,
+    "distraction_events": 172,
     "tasks_completed": 1,
     "tasks_missed": 0,
     "content_educational": 0,
     "content_non_educational": 0,
-    "distraction_minutes": 615
+    "distraction_minutes": 860
+  },
+  "2026-04-04": {
+    "study_minutes": 0,
+    "distraction_events": 4,
+    "tasks_completed": 0,
+    "tasks_missed": 0,
+    "content_educational": 0,
+    "content_non_educational": 0,
+    "distraction_minutes": 20
   }
 }

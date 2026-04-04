@@ -263,3 +263,18 @@ export function writeSocialEntry(dateKey, totalSeconds, isRunning, startedAt = n
     console.error("Failed to save social entry:", error);
   }
 }
+
+// ─────────────────────────────────────────────
+// NEW: returns a human-readable time label from
+// an ISO datetime string (used by SmartSchedule)
+// ─────────────────────────────────────────────
+export function formatISOToTimeLabel(isoString) {
+  if (!isoString) return "";
+  try {
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return isoString;
+    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return isoString;
+  }
+}
