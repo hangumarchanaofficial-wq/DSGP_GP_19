@@ -1,0 +1,23 @@
+{
+  "accuracy": 0.8845,
+  "f1": 0.9004,
+  "auc": 0.9544,
+  "avg_precision": 0.9666,
+  "confusion_matrix": {
+    "tn": 2325,
+    "fp": 412,
+    "fn": 330,
+    "tp": 3355
+  },
+  "config": {
+    "input_size": 24,
+    "hidden_size": 64,
+    "num_layers": 1,
+    "dropout": 0.5,
+    "bidirectional": true,
+    "attention_activation": "tanh",
+    "head_name": "out"
+  },
+  "used_feature_count": 24,
+  "compatibility_note": "exact feature match"
+}
