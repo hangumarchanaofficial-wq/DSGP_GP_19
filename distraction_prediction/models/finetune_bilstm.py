@@ -12,10 +12,12 @@ import sys
 import time
 from pathlib import Path
 
+import matplotlib
 import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import (
+    ConfusionMatrixDisplay,
     accuracy_score,
     average_precision_score,
     confusion_matrix,
@@ -23,6 +25,9 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 from torch.utils.data import DataLoader, TensorDataset
+
+matplotlib.use("Agg")
+from matplotlib import pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -37,7 +42,33 @@ EVAL_DIR         = SAVE_DIR / "evaluation"
 BASELINE_CKPT    = SAVE_DIR / "best_model.pt"
 FINETUNED_CKPT   = SAVE_DIR / "best_model_finetuned.pt"
 FINETUNE_RESULTS = SAVE_DIR / "bilstm_finetuned_results.json"
+BASE_EVAL_RESULTS = EVAL_DIR / "test_results.json"
 EVAL_RESULTS     = EVAL_DIR / "finetuned_bilstm_results.json"
+BASE_CM_IMAGE    = EVAL_DIR / "base_confusion_matrix.png"
+FINETUNED_CM_IMAGE = EVAL_DIR / "finetuned_confusion_matrix.png"
+
+
+def print_confusion_matrix(matrix: dict[str, int]) -> None:
+    print("\nConfusion matrix (actual x predicted)")
+    print("                Focused  Distracted")
+    print(f"Focused      {matrix['tn']:>9}  {matrix['fp']:>10}")
+    print(f"Distracted   {matrix['fn']:>9}  {matrix['tp']:>10}")
+
+
+def save_confusion_matrix_image(matrix: dict[str, int], image_path: Path, title: str) -> None:
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    display = ConfusionMatrixDisplay(
+        confusion_matrix=np.array(
+            [[matrix["tn"], matrix["fp"]], [matrix["fn"], matrix["tp"]]]
+        ),
+        display_labels=["Focused", "Distracted"],
+    )
+    fig, ax = plt.subplots(figsize=(6, 5))
+    display.plot(ax=ax, cmap="Blues", colorbar=False, values_format="d")
+    ax.set_title(title)
+    fig.tight_layout()
+    fig.savefig(image_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -255,15 +286,37 @@ def main():
         )
 
     # ── Evaluate on test set ─────────────────────────────────────
+    base_metrics = evaluate_checkpoint(BASELINE_CKPT, x_test, y_test, device)
+    with open(BASE_EVAL_RESULTS, "w", encoding="utf-8") as handle:
+        json.dump(base_metrics, handle, indent=2)
+    save_confusion_matrix_image(
+        base_metrics["confusion_matrix"],
+        BASE_CM_IMAGE,
+        "BiLSTM Base Confusion Matrix",
+    )
+
     test_metrics = evaluate_checkpoint(FINETUNED_CKPT, x_test, y_test, device)
     with open(EVAL_RESULTS, "w", encoding="utf-8") as handle:
         json.dump(test_metrics, handle, indent=2)
+    save_confusion_matrix_image(
+        test_metrics["confusion_matrix"],
+        FINETUNED_CM_IMAGE,
+        "BiLSTM Fine-Tuned Confusion Matrix",
+    )
 
     print(f"\nFine-tuning finished in {elapsed:.1f}s")
     print(f"Saved checkpoint     : {FINETUNED_CKPT}")
     print(f"Saved training summary: {FINETUNE_RESULTS}")
+    print(f"Saved base metrics   : {BASE_EVAL_RESULTS}")
     print(f"Saved test metrics   : {EVAL_RESULTS}")
+    print(f"Saved base CM image  : {BASE_CM_IMAGE}")
+    print(f"Saved tuned CM image : {FINETUNED_CM_IMAGE}")
+    print(f"Base metrics         : {base_metrics}")
     print(f"Test metrics         : {test_metrics}")
+    print("\nBase model")
+    print_confusion_matrix(base_metrics["confusion_matrix"])
+    print("\nFine-tuned model")
+    print_confusion_matrix(test_metrics["confusion_matrix"])
 
 
 if __name__ == "__main__":
