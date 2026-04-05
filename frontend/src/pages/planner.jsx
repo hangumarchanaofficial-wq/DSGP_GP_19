@@ -1833,7 +1833,7 @@ export default function Planner() {
                                 onClick={() => {
                                   if (activeTaskId === activeTask.id && isRunning) {
                                     showPlannerNotice(
-                                      "Task canâ€™t be removed yet",
+                                      "Task can't be removed yet",
                                       "Pause the running session first, then remove it from your queue.",
                                     );
                                     return;
@@ -2753,7 +2753,7 @@ export default function Planner() {
         border: "1px solid rgba(236,253,245,0.3)",
       }}
     >
-      â± {formatTime(timeLeft)}
+      Time {formatTime(timeLeft)}
     </span>
 
     {isRunning ? (
@@ -2817,7 +2817,7 @@ export default function Planner() {
   onClick={() => {
     if (activeTaskId === task.id && isRunning) {
       showPlannerNotice(
-        "Task canâ€™t be removed yet",
+        "Task can't be removed yet",
         "Pause the running session first, then remove it from your queue.",
       );
       return;
@@ -3161,10 +3161,10 @@ export default function Planner() {
                     {[
                       { label: "Tasks in queue", value: tasks.length },
                       { label: "Active now", value: activeCount },
-                      { label: "Current streak", value: currentStreak || "â€”" },
+                      { label: "Current streak", value: currentStreak || "-" },
                       {
                         label: "Focus rate",
-                        value: focusRate != null ? `${focusRate}%` : "â€”",
+                        value: focusRate != null ? `${focusRate}%` : "-",
                       },
                     ].map(({ label, value }) => (
                       <div
@@ -3381,7 +3381,7 @@ export default function Planner() {
               <span className="text-[10px] font-semibold">Start Reminder</span>
             </div>
             <p className="text-xs font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-              Itâ€™s time to start "{startReminderTask.subject}"
+              It's time to start "{startReminderTask.subject}"
             </p>
             <p className="text-[11px] mb-3" style={{ color: "var(--text-muted)" }}>
               Scheduled at {startReminderTask.scheduled_slot || "planned time"}

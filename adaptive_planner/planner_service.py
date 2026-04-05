@@ -273,6 +273,39 @@ class TrendAnalyzer:
     def _today(self) -> str:
         return datetime.now().strftime('%Y-%m-%d')
 
+    def _parse_datetime(self, value):
+        if not value:
+            return None
+        if isinstance(value, datetime):
+            return value.astimezone().replace(tzinfo=None) if value.tzinfo else value
+        text = str(value).strip()
+        if not text:
+            return None
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.%f'):
+            try:
+                return datetime.strptime(text, fmt)
+            except Exception:
+                continue
+        try:
+            parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+            return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
+        except Exception:
+            return None
+
+    def _task_day_key(self, task: dict, keys=None) -> str:
+        keys = keys or ('actual_completed_at', 'completed_at', 'started_at', 'created_at')
+        for key in keys:
+            dt = self._parse_datetime(task.get(key))
+            if dt:
+                return dt.strftime('%Y-%m-%d')
+        return self._today()
+
+    def _task_study_minutes(self, task: dict) -> float:
+        studied_sec = int(task.get('actual_duration_seconds') or task.get('studied_seconds') or 0)
+        if studied_sec <= 0:
+            return 0.0
+        return round(studied_sec / 60, 2)
+
     def _empty_day(self) -> dict:
         """Return a zero-filled day entry (does NOT write to self.daily)."""
         return {
@@ -296,19 +329,14 @@ class TrendAnalyzer:
         return dict(self.daily.get(date_str) or self._empty_day())
 
     def record_task_completed(self, task: dict):
-        entry = self._get_day(self._today())
+        entry = self._get_day(self._task_day_key(task))
         entry['tasks_completed'] += 1
-        # Use actual studied seconds if available, else fall back to duration_minutes.
-        studied_sec = int(task.get('actual_duration_seconds') or task.get('studied_seconds') or 0)
-        if studied_sec > 0:
-            entry['study_minutes'] += round(studied_sec / 60, 2)
-        else:
-            entry['study_minutes'] += int(task.get('duration_minutes') or 0)
+        entry['study_minutes'] += self._task_study_minutes(task)
         entry['distraction_events'] += int(task.get('distraction_events') or 0)
         self._save()
 
     def record_task_missed(self, task: dict):
-        entry = self._get_day(self._today())
+        entry = self._get_day(self._task_day_key(task))
         entry['tasks_missed'] += 1
         entry['distraction_events'] += int(task.get('distraction_events') or 0)
         self._save()
@@ -325,6 +353,59 @@ class TrendAnalyzer:
             entry['content_educational'] += 1
         else:
             entry['content_non_educational'] += 1
+        self._save()
+
+    def rebuild_from_task_records(self, tasks: list, history: list):
+        rebuilt = {}
+
+        for date_str, existing in self.daily.items():
+            rebuilt[date_str] = {
+                **self._empty_day(),
+                'content_educational': int(existing.get('content_educational') or 0),
+                'content_non_educational': int(existing.get('content_non_educational') or 0),
+                'distraction_minutes': int(existing.get('distraction_minutes') or 0),
+            }
+
+        seen_completed = set()
+        seen_missed = set()
+
+        def apply_record(task: dict):
+            if not isinstance(task, dict):
+                return
+
+            status = task.get('status')
+            task_id = task.get('id')
+            if status not in ('completed', 'missed') or not task_id:
+                return
+
+            date_key = self._task_day_key(task)
+            entry = rebuilt.setdefault(date_key, self._empty_day())
+
+            if status == 'completed':
+                if task_id in seen_completed:
+                    return
+                seen_completed.add(task_id)
+                entry['tasks_completed'] += 1
+                entry['study_minutes'] += self._task_study_minutes(task)
+                entry['distraction_events'] += int(task.get('distraction_events') or 0)
+                return
+
+            if task_id in seen_missed:
+                return
+            seen_missed.add(task_id)
+            entry['tasks_missed'] += 1
+            entry['distraction_events'] += int(task.get('distraction_events') or 0)
+
+        for task in history or []:
+            apply_record(task)
+
+        for task in (tasks or {}).values() if isinstance(tasks, dict) else (tasks or []):
+            apply_record(task)
+
+        for entry in rebuilt.values():
+            entry['study_minutes'] = round(float(entry.get('study_minutes') or 0), 2)
+
+        self.daily = dict(sorted(rebuilt.items()))
         self._save()
 
     def _get_range(self, days: int = 7) -> list:
@@ -1000,6 +1081,10 @@ class AdaptivePlanner:
         self.task_manager = TaskManager()
         self.profiler = ProductivityProfiler()
         self.trend_analyzer = TrendAnalyzer()
+        self.trend_analyzer.rebuild_from_task_records(
+            self.task_manager.get_all_tasks(),
+            self.task_manager.history,
+        )
 
         self.social_alert_count = 0
         self.distraction_streak = 0

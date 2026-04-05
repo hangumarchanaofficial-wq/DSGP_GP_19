@@ -44,6 +44,80 @@ const staggerInner = (delay = 0) => ({
   show:   { transition: { staggerChildren: 0.07, delayChildren: delay } },
 });
 
+function parsePlannerDate(value) {
+  if (!value) return null;
+  const normalized = typeof value === "string" && value.includes(" ")
+    ? value.replace(" ", "T")
+    : value;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function toDayKey(value) {
+  const parsed = value instanceof Date ? value : parsePlannerDate(value);
+  if (!parsed) return null;
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function pickTaskDate(task, keys) {
+  for (const key of keys) {
+    const parsed = parsePlannerDate(task?.[key]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function getTaskActualSeconds(task) {
+  const actualSeconds = Number(task?.actual_duration_seconds);
+  if (actualSeconds > 0) return actualSeconds;
+
+  const studiedSeconds = Number(task?.studied_seconds);
+  if (studiedSeconds > 0) return studiedSeconds;
+
+  const durationMinutes = Number(task?.duration_minutes);
+  if (durationMinutes > 0) return durationMinutes * 60;
+
+  return 0;
+}
+
+function deriveAchievement(completedTasksToday, completedMinutesToday) {
+  if (completedTasksToday >= 5 || completedMinutesToday >= 180) {
+    return {
+      name: "Task Crusher",
+      description: `Completed ${completedTasksToday} task${completedTasksToday === 1 ? "" : "s"} for ${completedMinutesToday} min today.`,
+    };
+  }
+
+  if (completedTasksToday >= 3 || completedMinutesToday >= 120) {
+    return {
+      name: "Deep Focus Achiever",
+      description: `Closed ${completedTasksToday} task${completedTasksToday === 1 ? "" : "s"} and banked ${completedMinutesToday} focused minutes today.`,
+    };
+  }
+
+  if (completedTasksToday >= 2 || completedMinutesToday >= 60) {
+    return {
+      name: "Focus Builder",
+      description: `Finished ${completedTasksToday} task${completedTasksToday === 1 ? "" : "s"} with ${completedMinutesToday} min of real study time today.`,
+    };
+  }
+
+  if (completedTasksToday >= 1 || completedMinutesToday > 0) {
+    return {
+      name: "First Focus",
+      description: `Completed ${completedTasksToday} task${completedTasksToday === 1 ? "" : "s"} and started your streak for today.`,
+    };
+  }
+
+  return {
+    name: "No achievement yet",
+    description: "Complete a task from today’s queue to unlock an achievement.",
+  };
+}
+
 // ─── animated counter ─────────────────────────────────────────────
 function AnimNumber({ value, suffix = "", decimals = 0 }) {
   const ref = useRef(null);
@@ -541,7 +615,8 @@ function SuggestionsPanel({ suggestions, isEmpty = false }) {
 
 // ─── motivation / streak ──────────────────────────────────────────
 function GoalProgress({ label, value, max }) {
-  const pct = Math.max(0, Math.min(100, Math.round((value / max) * 100)));
+  const safeMax = max > 0 ? max : 1;
+  const pct = max > 0 ? Math.max(0, Math.min(100, Math.round((value / safeMax) * 100))) : 0;
   return (
     <div>
       <div className="mb-2 flex items-center justify-between text-sm">
@@ -554,6 +629,10 @@ function GoalProgress({ label, value, max }) {
 }
 
 function MotivationPanel({ streakDays, badge, badgeDesc, goalMinutes, completedMinutes, isEmpty = false }) {
+  const goalLabel = goalMinutes > 0
+    ? `${completedMinutes} of ${goalMinutes} min completed`
+    : `${completedMinutes} min completed today`;
+
   return (
     <SectionCard className="p-6 lg:p-7">
       <SectionHeading title="Momentum" subtitle="Consistency, rewards, and progress." />
@@ -588,7 +667,7 @@ function MotivationPanel({ streakDays, badge, badgeDesc, goalMinutes, completedM
           <span className="text-[10px] uppercase tracking-[0.18em] text-emerald-200/80">Daily goal</span>
           <div className="mt-4 space-y-3">
             <GoalProgress
-              label={`${completedMinutes} of ${goalMinutes} min completed`}
+              label={goalLabel}
               value={completedMinutes}
               max={goalMinutes}
             />
@@ -943,10 +1022,87 @@ export default function Dashboard() {
   const longestStreak = `${longestStreakValue} min`;
 
   // ── real streak from planner ─────────────────────────────────────
-  const streakDays        = streakInfo?.focus_streak ?? 0;
-  const latestBadge       = streakInfo?.badges?.at(-1);
-  const badge             = latestBadge?.name ?? (isDistracted ? "Bounce Back Learner" : "Deep Focus Achiever");
-  const badgeDesc         = latestBadge?.description ?? "You earned this by sustaining focused study blocks with fewer distractions.";
+  const todayKey = useMemo(() => toDayKey(new Date()), []);
+  const yesterdayKey = useMemo(() => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return toDayKey(yesterday);
+  }, []);
+  const completedTaskEntries = useMemo(
+    () =>
+      tasks
+        .filter((task) => task?.status === "completed")
+        .map((task) => ({
+          completedAt: pickTaskDate(task, ["actual_completed_at", "completed_at", "started_at", "created_at"]),
+          actualSeconds: getTaskActualSeconds(task),
+        })),
+    [tasks],
+  );
+  const completedTasksToday = useMemo(
+    () => completedTaskEntries.filter(({ completedAt }) => toDayKey(completedAt) === todayKey),
+    [completedTaskEntries, todayKey],
+  );
+  const completedMinutesToday = useMemo(
+    () => Math.round(completedTasksToday.reduce((sum, entry) => sum + entry.actualSeconds, 0) / 60),
+    [completedTasksToday],
+  );
+  const todaysQueuedTasks = useMemo(
+    () =>
+      tasks.filter((task) => {
+        if (!task || task.status === "missed") return false;
+        const queueDate = pickTaskDate(task, ["planned_start", "created_at", "started_at"]);
+        return toDayKey(queueDate) === todayKey;
+      }),
+    [tasks, todayKey],
+  );
+  const goalMinutes = useMemo(
+    () => todaysQueuedTasks.reduce((sum, task) => sum + Math.max(0, Number(task?.duration_minutes) || 0), 0),
+    [todaysQueuedTasks],
+  );
+  const completedMinutes = useMemo(
+    () => Math.min(goalMinutes || completedMinutesToday, completedMinutesToday),
+    [completedMinutesToday, goalMinutes],
+  );
+  const completedDayKeys = useMemo(() => {
+    const uniqueKeys = new Set(
+      completedTaskEntries
+        .map(({ completedAt }) => toDayKey(completedAt))
+        .filter(Boolean),
+    );
+    return [...uniqueKeys].sort((a, b) => b.localeCompare(a));
+  }, [completedTaskEntries]);
+  const streakDays = useMemo(() => {
+    if (completedDayKeys.length === 0) return streakInfo?.focus_streak ?? 0;
+
+    const anchorKey = completedDayKeys.includes(todayKey)
+      ? todayKey
+      : completedDayKeys.includes(yesterdayKey)
+        ? yesterdayKey
+        : null;
+
+    if (!anchorKey) return 0;
+
+    let streak = 0;
+    let cursor = parsePlannerDate(anchorKey);
+    while (cursor) {
+      const key = toDayKey(cursor);
+      if (!completedDayKeys.includes(key)) break;
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }, [completedDayKeys, streakInfo, todayKey, yesterdayKey]);
+  const latestBadge = streakInfo?.badges?.at(-1);
+  const derivedAchievement = useMemo(
+    () => deriveAchievement(completedTasksToday.length, completedMinutesToday),
+    [completedMinutesToday, completedTasksToday.length],
+  );
+  const badge = completedTasksToday.length > 0 || completedMinutesToday > 0
+    ? derivedAchievement.name
+    : (latestBadge?.name ?? "No achievement yet");
+  const badgeDesc = completedTasksToday.length > 0 || completedMinutesToday > 0
+    ? derivedAchievement.description
+    : (latestBadge?.description ?? "Complete a task from today’s queue to unlock an achievement.");
 
   // ── real weekly pattern from analytics daily_trends ─────────────
   const weeklyPattern = useMemo(() => {
@@ -957,7 +1113,7 @@ export default function Dashboard() {
         .map(d => ({
           day: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
           hours: Number(((d.study_minutes ?? 0) / 60).toFixed(2)),
-          hasData: (d.tasks_completed ?? 0) > 0 || (d.study_minutes ?? 0) > 0,
+          hasData: (d.study_minutes ?? 0) > 0,
         }))
         .filter(d => d.hasData);
       return withData;
@@ -1001,13 +1157,6 @@ export default function Dashboard() {
   }, [analytics, isWarmup, warmupLabel, tasks]);
 
   // ── study goal from analytics weekly_summary ─────────────────────
-  const goalMinutes = 180;
-  const completedMinutes = useMemo(() => {
-    const wh = analytics?.weekly_summary?.total_study_hours;
-    if (typeof wh === "number") return Math.min(goalMinutes, Math.round(wh * 60));
-    return Math.min(goalMinutes, studyMinutes);
-  }, [analytics, studyMinutes]);
-
   const mostUsedApp = useMemo(() => {
     if (!fullMappedHistory.length) return "No app yet";
     const counts = fullMappedHistory.reduce((acc, h) => { acc[h.app] = (acc[h.app] || 0) + 1; return acc; }, {});
