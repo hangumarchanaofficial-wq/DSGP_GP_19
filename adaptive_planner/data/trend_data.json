@@ -1,15 +1,6 @@
 {
-  "2026-03-29": {
-    "study_minutes": 60,
-    "distraction_events": 0,
-    "tasks_completed": 1,
-    "tasks_missed": 0,
-    "content_educational": 0,
-    "content_non_educational": 1,
-    "distraction_minutes": 0
-  },
   "2026-03-24": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -18,7 +9,7 @@
     "distraction_minutes": 0
   },
   "2026-03-25": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -27,7 +18,7 @@
     "distraction_minutes": 0
   },
   "2026-03-26": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -36,7 +27,7 @@
     "distraction_minutes": 0
   },
   "2026-03-27": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -45,7 +36,7 @@
     "distraction_minutes": 0
   },
   "2026-03-28": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -53,9 +44,18 @@
     "content_non_educational": 0,
     "distraction_minutes": 0
   },
+  "2026-03-29": {
+    "study_minutes": 0.0,
+    "distraction_events": 0,
+    "tasks_completed": 1,
+    "tasks_missed": 0,
+    "content_educational": 0,
+    "content_non_educational": 1,
+    "distraction_minutes": 0
+  },
   "2026-03-30": {
-    "study_minutes": 0,
-    "distraction_events": 3,
+    "study_minutes": 0.0,
+    "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
     "content_educational": 0,
@@ -63,7 +63,7 @@
     "distraction_minutes": 15
   },
   "2026-03-31": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -72,7 +72,7 @@
     "distraction_minutes": 0
   },
   "2026-04-01": {
-    "study_minutes": 0,
+    "study_minutes": 0.0,
     "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
@@ -81,8 +81,8 @@
     "distraction_minutes": 0
   },
   "2026-04-02": {
-    "study_minutes": 0,
-    "distraction_events": 11,
+    "study_minutes": 0.0,
+    "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
     "content_educational": 0,
@@ -90,8 +90,8 @@
     "distraction_minutes": 55
   },
   "2026-04-03": {
-    "study_minutes": 60,
-    "distraction_events": 172,
+    "study_minutes": 8.12,
+    "distraction_events": 0,
     "tasks_completed": 1,
     "tasks_missed": 0,
     "content_educational": 0,
@@ -99,8 +99,8 @@
     "distraction_minutes": 860
   },
   "2026-04-04": {
-    "study_minutes": 0,
-    "distraction_events": 4,
+    "study_minutes": 0.0,
+    "distraction_events": 0,
     "tasks_completed": 0,
     "tasks_missed": 0,
     "content_educational": 0,
@@ -108,9 +108,9 @@
     "distraction_minutes": 20
   },
   "2026-04-05": {
-    "study_minutes": 120,
-    "distraction_events": 0,
-    "tasks_completed": 2,
+    "study_minutes": 92.32,
+    "distraction_events": 134,
+    "tasks_completed": 3,
     "tasks_missed": 0,
     "content_educational": 0,
     "content_non_educational": 0,
