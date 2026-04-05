@@ -6,7 +6,19 @@ export function useAgent(pollInterval = 5000) {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
-  const [blockerApps, setBlockerApps] = useState({ blocked_apps: [], distracted_apps: [] });
+  const [blockerApps, setBlockerApps] = useState({
+    blocked_apps: [],
+    auto_blocked_apps: [],
+    effective_blocked_apps: [],
+    distracted_apps: [],
+  });
+
+  const normalizeBlockerApps = useCallback((data) => ({
+    blocked_apps: Array.isArray(data?.blocked_apps) ? data.blocked_apps : [],
+    auto_blocked_apps: Array.isArray(data?.auto_blocked_apps) ? data.auto_blocked_apps : [],
+    effective_blocked_apps: Array.isArray(data?.effective_blocked_apps) ? data.effective_blocked_apps : [],
+    distracted_apps: Array.isArray(data?.distracted_apps) ? data.distracted_apps : [],
+  }), []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -33,14 +45,11 @@ export function useAgent(pollInterval = 5000) {
   const fetchBlockerApps = useCallback(async () => {
     try {
       const data = await agentAPI.getBlockerApps();
-      setBlockerApps({
-        blocked_apps: Array.isArray(data?.blocked_apps) ? data.blocked_apps : [],
-        distracted_apps: Array.isArray(data?.distracted_apps) ? data.distracted_apps : [],
-      });
+      setBlockerApps(normalizeBlockerApps(data));
     } catch (_) {
       // Blocker app summaries are optional until the backend is ready.
     }
-  }, []);
+  }, [normalizeBlockerApps]);
 
   useEffect(() => {
     fetchStatus();
@@ -74,17 +83,14 @@ export function useAgent(pollInterval = 5000) {
   const updateBlockedApp = useCallback(async (appName, action) => {
     try {
       const result = await agentAPI.updateBlockedApp(appName, action);
-      setBlockerApps({
-        blocked_apps: Array.isArray(result?.blocked_apps) ? result.blocked_apps : [],
-        distracted_apps: Array.isArray(result?.distracted_apps) ? result.distracted_apps : [],
-      });
+      setBlockerApps(normalizeBlockerApps(result));
       await fetchStatus();
       return result;
     } catch (err) {
       setError('Failed to update blocked app');
       throw err;
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, normalizeBlockerApps]);
 
   const updateBlockerSettings = useCallback(async (payload) => {
     try {

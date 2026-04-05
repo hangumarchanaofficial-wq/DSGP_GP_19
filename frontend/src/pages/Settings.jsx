@@ -169,7 +169,9 @@ export default function Settings() {
   const [updatingAutoBlock, setUpdatingAutoBlock] = useState(false);
 
   const detectedDistractedApps = blockerApps?.distracted_apps ?? [];
-  const blockedApps = blockerApps?.blocked_apps ?? blocker?.blocked_apps ?? [];
+  const manualBlockedApps = blockerApps?.blocked_apps ?? blocker?.blocked_apps ?? [];
+  const autoBlockedApps = blockerApps?.auto_blocked_apps ?? blocker?.auto_blocked_apps ?? [];
+  const effectiveBlockedApps = blockerApps?.effective_blocked_apps ?? blocker?.effective_blocked_apps ?? [];
   const autoBlock = blocker?.auto_block_enabled ?? true;
 
   useEffect(() => {
@@ -246,7 +248,7 @@ export default function Settings() {
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <StatBlock label="Blocked Apps" value={String(blockedApps.length)} accent="#8b5cf6" />
+                  <StatBlock label="Blocked Apps" value={String(effectiveBlockedApps.length)} accent="#8b5cf6" />
                   <StatBlock label="Detected Apps" value={String(detectedDistractedApps.length)} accent="#22d3ee" />
                   <StatBlock label="Auto-block" value={autoBlock ? "On" : "Off"} accent={autoBlock ? "#34d399" : "#f59e0b"} />
                 </div>
@@ -360,7 +362,7 @@ export default function Settings() {
                 title="Detected Apps"
                 subtitle="Apps surfaced by distracted prediction history and available for one-click control."
                 tint="#22d3ee"
-                action={<StatusPill label={`${blockedApps.length} manual`} tone="info" />}
+                action={<StatusPill label={`${manualBlockedApps.length} manual / ${autoBlockedApps.length} auto`} tone="info" />}
               />
 
               <div className="mt-6 space-y-3">
