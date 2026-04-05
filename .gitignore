@@ -11,3 +11,4 @@ distraction_prediction/models/saved_models/*.pt
 distraction_prediction/models/saved_models/**/*.joblib
 .DS_Store
 .idea/
+.claude/
